@@ -290,23 +290,24 @@ export function registerRoutes(app: Express): Server {
       console.log(`Found ${contactMessages.length} messages for contact ${contactNumber}`);
 
       // Map and format messages
-      const formattedMessages = contactMessages.map(msg => ({
-        id: msg.sid,
-        contactNumber: msg.direction === 'inbound' ? 
-          msg.from?.replace('whatsapp:', '') :
-          msg.to?.replace('whatsapp:', ''),
-        content: msg.body || '',
-        direction: msg.direction,
-        status: msg.status,
-        twilioSid: msg.sid,
-        metadata: {
-          channel: msg.to?.startsWith('whatsapp:') ? 'whatsapp' : 'sms',
-          profile: {
-            name: msg.direction === 'inbound' ? msg.from : msg.to
-          }
-        },
-        createdAt: msg.dateCreated
-      }));
+      const formattedMessages = contactMessages.map(msg => {
+        const isInbound = msg.direction === 'inbound';
+        return {
+          id: msg.sid,
+          contactNumber: isInbound ? msg.from?.replace('whatsapp:', '') : msg.to?.replace('whatsapp:', ''),
+          content: msg.body || '',
+          direction: msg.direction,
+          status: msg.status,
+          twilioSid: msg.sid,
+          metadata: {
+            channel: msg.to?.startsWith('whatsapp:') ? 'whatsapp' : 'sms',
+            profile: {
+              name: isInbound ? msg.from : msg.to
+            }
+          },
+          createdAt: msg.dateCreated
+        };
+      });
 
       // Sort messages by date
       formattedMessages.sort((a, b) => 
