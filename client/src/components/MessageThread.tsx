@@ -49,24 +49,22 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
       hour: 'numeric',
       minute: '2-digit',
       second: '2-digit',
-      hour12: true
+      hour12: false
     });
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'read':
-        return <CheckCheck className="h-3 w-3 inline-block ml-1" />;
-      case 'delivered':
-        return <Check className="h-3 w-3 inline-block ml-1" />;
-      default:
-        return null;
-    }
   };
 
   // Helper to determine if a message is outbound (from us to client)
   const isOutboundMessage = (message: any) => {
     return message.direction === "outbound";
+  };
+
+  // Format message line based on direction and status
+  const formatMessageLine = (message: any, isOutbound: boolean) => {
+    const time = formatMessageTime(message.createdAt);
+    const sender = isOutbound ? '[Rottie]' : '[inbound]';
+    const content = message.content;
+    const status = message.status.toLowerCase();
+    return `${time} ${sender} ${content} :: ${status}`;
   };
 
   // Sort messages by time
@@ -98,23 +96,11 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
                 <div
                   key={message.id}
                   className={cn(
-                    "text-sm whitespace-pre-wrap font-mono p-2 rounded flex items-start gap-2",
-                    isOutbound ? "bg-red-900 text-red-400" : "bg-green-900 text-green-400"
+                    "text-sm whitespace-pre-wrap p-2 rounded font-mono",
+                    isOutbound ? "bg-red-900 text-white" : "bg-green-900 text-white"
                   )}
                 >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs opacity-70">{formatMessageTime(message.createdAt)}</span>
-                      <span className="text-xs px-1 rounded bg-opacity-20 bg-current">
-                        {isOutbound ? 'outbound' : 'inbound'}
-                      </span>
-                    </div>
-                    <div className="mt-1">{message.content}</div>
-                  </div>
-                  <div className="text-xs opacity-70 flex items-center">
-                    {message.status}
-                    {getStatusIcon(message.status)}
-                  </div>
+                  {formatMessageLine(message, isOutbound)}
                 </div>
               );
             })}
