@@ -21,6 +21,16 @@ try {
     process.env.TWILIO_ACCOUNT_SID!,
     process.env.TWILIO_AUTH_TOKEN!
   );
+  // Send a test message
+  twilioClient.messages.create({
+    body: "Test connection message from RAPIENERGY WhatsApp Service",
+    to: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
+    from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
+  }).then(message => {
+    console.log('Test message sent successfully:', message.sid);
+  }).catch(error => {
+    console.error('Error sending test message:', error);
+  });
   console.log('Twilio client initialized successfully');
 } catch (error) {
   console.error('Failed to initialize Twilio client:', error);
