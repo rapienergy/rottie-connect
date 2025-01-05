@@ -75,14 +75,14 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
               <div
                 key={message.id}
                 className={cn(
-                  "text-sm whitespace-pre-wrap font-mono",
+                  "text-sm whitespace-pre-wrap font-mono p-1 rounded",
                   message.direction === "outbound" 
-                    ? "text-green-400" 
-                    : "text-red-400"
+                    ? "bg-red-900/50 text-red-400" 
+                    : "bg-green-900/50 text-green-400"
                 )}
               >
                 {`${formatMessageTime(message.createdAt)} [${message.direction}] ${message.content}`}
-                <span className="text-zinc-500"> :: ${message.status}</span>
+                <span className="text-zinc-500"> :: {message.status}</span>
               </div>
             ))}
             <div ref={messagesEndRef} />
