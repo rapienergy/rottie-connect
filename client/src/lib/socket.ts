@@ -14,12 +14,8 @@ export function connectWebSocket() {
 
     switch (data.type) {
       case "message_created":
-        // Invalidate both the messages list and conversations list
         queryClient.invalidateQueries({
-          queryKey: [`/api/conversations/${data.message.contactNumber}/messages`],
-        });
-        queryClient.invalidateQueries({
-          queryKey: ["/api/conversations"],
+          queryKey: [`/api/messages/${data.message.contactId}`],
         });
         break;
       case "contact_created":

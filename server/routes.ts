@@ -290,19 +290,12 @@ export function registerRoutes(app: Express): Server {
           msg.to?.replace('whatsapp:', ''),
         content: msg.body || '',
         direction: msg.direction,
-        status: msg.status, // Twilio statuses: queued, failed, sent, delivered, undelivered, received, read
+        status: msg.status,
         twilioSid: msg.sid,
         metadata: {
           channel: 'whatsapp',
           profile: {
             name: msg.direction === 'inbound' ? msg.from : msg.to
-          },
-          statusDetails: {
-            errorCode: msg.errorCode,
-            errorMessage: msg.errorMessage,
-            dateUpdated: msg.dateUpdated,
-            price: msg.price,
-            priceUnit: msg.priceUnit
           }
         },
         createdAt: msg.dateCreated

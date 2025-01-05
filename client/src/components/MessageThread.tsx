@@ -53,16 +53,11 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     });
   };
 
-  // Sort messages by time
-  const sortedMessages = messages?.slice().sort((a, b) => 
-    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  );
-
   return (
     <div className="h-full flex flex-col bg-black rounded-lg border border-zinc-800">
       <div className="p-4 border-b border-zinc-800">
         <h2 className="font-mono text-white">
-          {sortedMessages?.[0]?.contactName || contactNumber}
+          {messages?.[0]?.contactName || contactNumber}
         </h2>
         <p className="font-mono text-sm text-zinc-400">WhatsApp Business</p>
       </div>
@@ -75,28 +70,21 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
             ))}
           </div>
         ) : (
-          <div className="space-y-4">
-            {sortedMessages?.map((message) => {
-              const isOutbound = message.direction === "outbound";
-              const time = formatMessageTime(message.createdAt);
-              return (
-                <div
-                  key={message.id}
-                  className={cn(
-                    "max-w-[80%] text-sm whitespace-pre-wrap p-3 rounded-lg font-mono",
-                    isOutbound ? "bg-red-900 text-white" : "bg-green-900 text-white"
-                  )}
-                >
-                  <div className="opacity-70 text-xs mb-1">
-                    {time} {isOutbound ? "[Rottie]" : "[inbound]"}
-                  </div>
-                  <div>{message.content}</div>
-                  <div className="text-xs opacity-70 mt-1 text-right">
-                    {message.status.toLowerCase()}
-                  </div>
-                </div>
-              );
-            })}
+          <div className="space-y-2">
+            {messages?.map((message) => (
+              <div
+                key={message.id}
+                className={cn(
+                  "text-sm whitespace-pre-wrap font-mono",
+                  message.direction === "outbound" 
+                    ? "text-green-400" 
+                    : "text-red-400"
+                )}
+              >
+                {`${formatMessageTime(message.createdAt)} [${message.direction}] ${message.content}`}
+                <span className="text-zinc-500"> :: ${message.status}</span>
+              </div>
+            ))}
             <div ref={messagesEndRef} />
           </div>
         )}
