@@ -147,8 +147,11 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Add console logging to the Twilio config endpoint
   app.post("/api/twilio/config", async (req, res) => {
     try {
+      console.log("Updating Twilio configuration...");
+
       // Deactivate existing config
       await db
         .update(twilioConfig)
@@ -158,9 +161,15 @@ export function registerRoutes(app: Express): Server {
       // Insert new config
       const config = await db
         .insert(twilioConfig)
-        .values({ ...req.body, active: true })
+        .values({ 
+          accountSid: process.env.TWILIO_ACCOUNT_SID || '',
+          authToken: process.env.TWILIO_AUTH_TOKEN || '',
+          phoneNumber: process.env.TWILIO_PHONE_NUMBER || '',
+          active: true 
+        })
         .returning();
 
+      console.log("Twilio configuration updated successfully");
       res.json(config[0]);
     } catch (error) {
       console.error("Error updating Twilio config:", error);
