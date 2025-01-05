@@ -219,14 +219,12 @@ export function registerRoutes(app: Express): Server {
 
       const conversations = twilioMessages.reduce((acc: any, msg: any) => {
         const isWhatsApp = msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:');
-        if (!isWhatsApp) return acc;
+        const channel = isWhatsApp ? 'whatsapp' : 'sms';
+        const contactNumber = (isWhatsApp ? 
+          (msg.to?.startsWith('whatsapp:') ? msg.from : msg.to)?.replace('whatsapp:', '') :
+          (msg.direction === 'inbound' ? msg.from : msg.to));
 
-        const channel = 'whatsapp';
-        const contactNumber = (msg.direction === 'inbound' ? msg.from : msg.to)?.replace('whatsapp:', '');
-
-        if (!contactNumber) return acc;
-
-        if (!acc[contactNumber] || new Date(msg.dateCreated) > new Date(acc[contactNumber].latestMessage.createdAt)) {
+        if (!acc[contactNumber]) {
           acc[contactNumber] = {
             contactNumber,
             latestMessage: {
@@ -236,6 +234,13 @@ export function registerRoutes(app: Express): Server {
               createdAt: msg.dateCreated
             },
             channel
+          };
+        } else if (new Date(msg.dateCreated) > new Date(acc[contactNumber].latestMessage.createdAt)) {
+          acc[contactNumber].latestMessage = {
+            content: msg.body,
+            direction: msg.direction,
+            status: msg.status,
+            createdAt: msg.dateCreated
           };
         }
         return acc;
