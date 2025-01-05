@@ -2,19 +2,42 @@ import { useState } from "react";
 import { useConversations } from "@/lib/api";
 import { MessageThread } from "@/components/MessageThread";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, AlertCircle } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 
 export function Dashboard() {
   const [selectedNumber, setSelectedNumber] = useState<string | null>(null);
   const { data: conversations, isLoading } = useConversations();
+  const { data: twilioStatus } = useQuery({
+    queryKey: ["/api/twilio/status"],
+    refetchInterval: 30000, // Check connection every 30 seconds
+  });
 
   return (
     <div className="container mx-auto px-4 py-6">
+      {/* Twilio Status Banner */}
+      {twilioStatus && (
+        <div className={`mb-4 p-2 rounded-md font-mono text-sm ${
+          twilioStatus.status === 'connected'
+            ? 'bg-zinc-800 text-green-400'
+            : 'bg-red-900/50 text-red-400'
+        }`}>
+          {twilioStatus.status === 'connected' ? (
+            `Connected to Twilio (${twilioStatus.friendlyName}) - WhatsApp number: ${twilioStatus.whatsappNumber}`
+          ) : (
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              <span>Twilio Connection Error: {twilioStatus.message}</span>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 h-[calc(100vh-8rem)]">
         {/* Conversations List */}
         <div className="md:col-span-3 h-full flex flex-col bg-black rounded-lg border border-zinc-800">
           <div className="p-4 border-b border-zinc-800">
-            <h2 className="font-mono text-white mb-2">Conversations</h2>
+            <h2 className="font-mono text-white mb-2">WhatsApp Conversations</h2>
           </div>
 
           <div className="flex-1 overflow-y-auto p-2">
@@ -39,17 +62,29 @@ export function Dashboard() {
                     <button
                       key={conversation.contactNumber}
                       onClick={() => setSelectedNumber(conversation.contactNumber)}
-                      className="w-full p-3 rounded-md text-left font-mono hover:bg-zinc-900 transition-colors"
+                      className={`w-full p-3 rounded-md text-left font-mono hover:bg-zinc-900 transition-colors ${
+                        selectedNumber === conversation.contactNumber ? 'bg-zinc-900' : ''
+                      }`}
                     >
                       <div className="text-white">
-                        {`${time} [${conversation.channel}] ${conversation.contactName || conversation.contactNumber}`}
+                        {`${time} [whatsapp] ${conversation.contactName || conversation.contactNumber}`}
                       </div>
                       <div className="text-sm text-zinc-400 truncate">
                         {conversation.latestMessage.content}
                       </div>
+                      <div className="text-xs text-zinc-500">
+                        {conversation.messageCount} messages
+                      </div>
                     </button>
                   );
                 })}
+
+                {conversations?.length === 0 && (
+                  <div className="text-center text-zinc-400 font-mono p-4">
+                    <p>No WhatsApp conversations yet</p>
+                    <p className="text-xs mt-2">Messages will appear here when received</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
