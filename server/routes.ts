@@ -28,25 +28,63 @@ try {
 }
 
 // Format number for WhatsApp Business API
-function formatWhatsAppNumber(phoneNumber: string, isFromNumber = false): string {
+function formatWhatsAppNumber(phoneNumber: string): string {
+  if (!phoneNumber) return '';
+
   // Remove all non-digit characters except plus sign
   let cleaned = phoneNumber.replace(/[^\d+]/g, '');
 
   // Ensure number starts with + and country code
   if (!cleaned.startsWith('+')) {
-    cleaned = '+' + cleaned;
+    // For US numbers, add +1
+    if (cleaned.length === 10) {
+      cleaned = '+1' + cleaned;
+    } else {
+      cleaned = '+' + cleaned;
+    }
   }
 
-  // For 10-digit US numbers, add +1
-  if (cleaned.length === 10) {
-    cleaned = '+1' + cleaned;
-  }
-
-  // Remove any spaces and format consistently
-  cleaned = cleaned.replace(/\s+/g, '');
-
-  // Add whatsapp: prefix for API calls
+  // Add whatsapp: prefix for Business API
   return `whatsapp:${cleaned}`;
+}
+
+async function verifyWhatsAppBusinessProfile() {
+  try {
+    // Get account information
+    const account = await twilioClient.api.accounts(process.env.TWILIO_ACCOUNT_SID!).fetch();
+
+    // Get WhatsApp-enabled phone numbers
+    const phoneNumbers = await twilioClient.incomingPhoneNumbers.list();
+    const businessNumber = phoneNumbers.find(n => 
+      n.phoneNumber === process.env.TWILIO_PHONE_NUMBER || 
+      n.phoneNumber === formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER!)
+    );
+
+    if (!businessNumber) {
+      throw new Error('WhatsApp Business number not found in your Twilio account');
+    }
+
+    // Verify messaging service configuration
+    const messagingServices = await twilioClient.messaging.v1.services.list();
+    const whatsappService = messagingServices.find(s => 
+      s.inboundRequestUrl?.includes('whatsapp') || 
+      s.fallbackUrl?.includes('whatsapp')
+    );
+
+    return {
+      status: 'connected',
+      accountType: account.type,
+      businessProfile: {
+        friendlyName: businessNumber.friendlyName,
+        phoneNumber: businessNumber.phoneNumber,
+        whatsappEnabled: !!whatsappService,
+        capabilities: businessNumber.capabilities
+      }
+    };
+  } catch (error: any) {
+    console.error('Error verifying WhatsApp Business profile:', error);
+    throw new Error(`WhatsApp Business verification failed: ${error.message}`);
+  }
 }
 
 export function registerRoutes(app: Express): Server {
@@ -67,28 +105,13 @@ export function registerRoutes(app: Express): Server {
     });
   };
 
-  // Verify WhatsApp Business Profile and Configuration
+  // Verify WhatsApp Business Profile status
   app.get("/api/twilio/status", async (_req, res) => {
     try {
-      // Verify account and WhatsApp capabilities
-      const account = await twilioClient.api.accounts(process.env.TWILIO_ACCOUNT_SID!).fetch();
-
-      // Check if the number exists and get its capabilities
-      const phoneNumbers = await twilioClient.incomingPhoneNumbers.list();
-      const whatsappNumber = phoneNumbers.find(n => n.phoneNumber === process.env.TWILIO_PHONE_NUMBER);
-
-      if (!whatsappNumber) {
-        throw new Error('The specified phone number was not found in your Twilio account');
-      }
-
-      res.json({
-        status: 'connected',
-        friendlyName: account.friendlyName,
-        whatsappNumber: process.env.TWILIO_PHONE_NUMBER,
-        capabilities: whatsappNumber.capabilities
-      });
+      const profile = await verifyWhatsAppBusinessProfile();
+      res.json(profile);
     } catch (error: any) {
-      console.error("Error verifying WhatsApp configuration:", error);
+      console.error("WhatsApp Business API connection error:", error);
       res.status(500).json({
         status: 'error',
         message: error.message,
@@ -106,16 +129,19 @@ export function registerRoutes(app: Express): Server {
         throw new Error('Contact number and content are required');
       }
 
-      // Format the WhatsApp numbers
-      const fromNumber = formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER!, true);
+      // Verify WhatsApp Business profile before sending
+      await verifyWhatsAppBusinessProfile();
+
+      // Format the numbers for WhatsApp Business API
+      const fromNumber = formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER!);
       const toNumber = formatWhatsAppNumber(contactNumber);
 
-      console.log('Attempting to send WhatsApp message:');
+      console.log('Sending WhatsApp message:');
       console.log('From:', fromNumber);
       console.log('To:', toNumber);
       console.log('Content:', content);
 
-      // Send message via Twilio WhatsApp API
+      // Send message via Twilio WhatsApp Business API
       const twilioMessage = await twilioClient.messages.create({
         from: fromNumber,
         to: toNumber,
