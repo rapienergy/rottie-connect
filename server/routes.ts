@@ -265,9 +265,11 @@ export function registerRoutes(app: Express): Server {
 
       const { contactNumber } = req.params;
 
-      // Fetch messages for both directions (to/from this contact)
+      console.log(`Fetching messages for conversation with ${contactNumber}`);
+
+      // Fetch messages with a higher limit to ensure we get the full history
       const messages = await twilioClient.messages.list({
-        limit: 100,
+        limit: 500,
       });
 
       // Filter messages for this specific contact's conversation
@@ -276,9 +278,16 @@ export function registerRoutes(app: Express): Server {
         const normalizedTo = msg.to?.replace('whatsapp:', '');
         const normalizedFrom = msg.from?.replace('whatsapp:', '');
 
-        // Include messages where this contact is either sender or receiver
-        return normalizedTo === contactNumber || normalizedFrom === contactNumber;
+        // Message is part of this conversation if:
+        // 1. This contact sent a message to our number (inbound)
+        // 2. Our number sent a message to this contact (outbound)
+        return (
+          (normalizedFrom === contactNumber && normalizedTo?.endsWith('6311')) ||
+          (normalizedTo === contactNumber && normalizedFrom?.endsWith('6311'))
+        );
       });
+
+      console.log(`Found ${contactMessages.length} messages for contact ${contactNumber}`);
 
       // Map and format messages
       const formattedMessages = contactMessages.map(msg => ({
@@ -291,7 +300,7 @@ export function registerRoutes(app: Express): Server {
         status: msg.status,
         twilioSid: msg.sid,
         metadata: {
-          channel: 'whatsapp',
+          channel: msg.to?.startsWith('whatsapp:') ? 'whatsapp' : 'sms',
           profile: {
             name: msg.direction === 'inbound' ? msg.from : msg.to
           }
@@ -304,7 +313,6 @@ export function registerRoutes(app: Express): Server {
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       );
 
-      console.log(`Found ${formattedMessages.length} messages for contact ${contactNumber}`);
       res.json(formattedMessages);
     } catch (error: any) {
       console.error("Error fetching messages:", error);
