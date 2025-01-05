@@ -54,19 +54,21 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     });
   };
 
-  // Helper to determine if a message is from the system
-  const isSystemMessage = (message: any) => {
-    const formattedSystem = `whatsapp:${systemNumber}`;
-    return message.direction === "outbound" || 
-           (message.metadata?.from === formattedSystem) ||
-           (message.metadata?.to === message.contactNumber);
+  // Helper to determine if a message is outbound (from us to client)
+  const isOutboundMessage = (message: any) => {
+    return message.direction === "outbound" || message.twilioSid?.startsWith('SM');
   };
+
+  // Sort messages by time
+  const sortedMessages = messages?.slice().sort((a, b) => 
+    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
 
   return (
     <div className="h-full flex flex-col bg-black rounded-lg border border-zinc-800">
       <div className="p-4 border-b border-zinc-800">
         <h2 className="font-mono text-white">
-          {messages?.[0]?.contactName || contactNumber}
+          {sortedMessages?.[0]?.contactName || contactNumber}
         </h2>
         <p className="font-mono text-sm text-zinc-400">WhatsApp Business</p>
       </div>
@@ -80,19 +82,19 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
           </div>
         ) : (
           <div className="space-y-2">
-            {messages?.map((message) => {
-              const isSystem = isSystemMessage(message);
+            {sortedMessages?.map((message) => {
+              const isOutbound = isOutboundMessage(message);
               return (
                 <div
                   key={message.id}
                   className={cn(
                     "text-sm whitespace-pre-wrap font-mono p-1 rounded",
-                    isSystem
+                    isOutbound
                       ? "bg-red-900 text-red-400"
                       : "bg-green-900 text-green-400"
                   )}
                 >
-                  {`${formatMessageTime(message.createdAt)} [${isSystem ? 'outbound' : 'inbound'}] ${message.content}`}
+                  {`${formatMessageTime(message.createdAt)} [${isOutbound ? 'outbound' : 'inbound'}] ${message.content}`}
                   <span className="text-zinc-500"> :: {message.status}</span>
                 </div>
               );
