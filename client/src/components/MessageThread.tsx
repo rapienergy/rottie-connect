@@ -3,7 +3,7 @@ import { useMessages, useSendMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MessageSquare, Phone, Send } from "lucide-react";
+import { MessageSquare, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface MessageThreadProps {
@@ -29,7 +29,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     await sendMessage.mutateAsync({ 
       contactNumber, 
       content,
-      channel: messages?.[0]?.metadata?.channel || 'whatsapp' 
+      channel: 'whatsapp'
     });
     form.reset();
   };
@@ -41,19 +41,17 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
   return (
     <div className="h-full flex flex-col bg-black rounded-lg border border-zinc-800">
       <div className="p-4 border-b border-zinc-800">
-        <h2 className="font-mono text-white">
+        <h2 className="font-mono text-white mb-1">
           {messages?.[0]?.contactName || contactNumber}
         </h2>
-        <p className="font-mono text-sm text-zinc-400">
-          Channel: {messages?.[0]?.metadata?.channel || 'whatsapp'}
-        </p>
+        <p className="text-xs text-zinc-400">WhatsApp Conversation</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-2 font-mono bg-black">
+      <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {messagesLoading ? (
           <div className="space-y-4">
             {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-6 w-3/4 bg-zinc-800" />
+              <Skeleton key={i} className="h-16 w-3/4 bg-zinc-800" />
             ))}
           </div>
         ) : (
@@ -61,26 +59,27 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
             const time = new Date(message.createdAt).toLocaleTimeString('en-US', {
               hour: 'numeric',
               minute: '2-digit',
-              second: '2-digit',
               hour12: true
             });
 
             const isOutbound = message.direction === "outbound";
             const messageClass = cn(
-              "flex items-center gap-2 p-3 rounded-lg",
-              isOutbound ? "bg-green-600/20 text-green-400" : "bg-zinc-800 text-white"
+              "flex flex-col max-w-[80%] space-y-1 rounded-lg p-3",
+              isOutbound ? 
+                "bg-green-600/20 text-green-400 ml-auto" : 
+                "bg-zinc-800 text-white"
             );
-
-            const channelIcon = message.metadata?.channel === 'whatsapp' 
-              ? <MessageSquare className="h-4 w-4" /> 
-              : <Phone className="h-4 w-4" />;
 
             return (
               <div key={message.id} className={messageClass}>
-                <span className="text-xs text-zinc-500">{time}</span>
-                {channelIcon}
-                <span>{message.content}</span>
-                <span className="text-xs text-zinc-500 ml-auto">{message.status}</span>
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4" />
+                  <span className="flex-1">{message.content}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs text-zinc-500">
+                  <span>{time}</span>
+                  <span>{message.status}</span>
+                </div>
               </div>
             );
           })

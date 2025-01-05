@@ -5,7 +5,7 @@ import { db } from "@db";
 import { messages } from "@db/schema";
 import { eq, desc } from "drizzle-orm";
 import twilio from "twilio";
-import type { Twilio } from "twilio";
+import type { Twilio, MessageInstance } from "twilio/lib/rest/api/v2010/account/message";
 
 // Initialize Twilio client with error handling
 let twilioClient: Twilio | null = null;
@@ -23,8 +23,8 @@ try {
   console.error('Failed to initialize Twilio client:', error);
 }
 
-// Format number for various channels
-function formatPhoneNumber(phoneNumber: string, channel: 'whatsapp' | 'sms' | 'voice'): string {
+// Format WhatsApp number
+function formatWhatsAppNumber(phoneNumber: string): string {
   if (!phoneNumber) return '';
 
   // Remove all non-digit characters except plus sign
@@ -40,8 +40,8 @@ function formatPhoneNumber(phoneNumber: string, channel: 'whatsapp' | 'sms' | 'v
     }
   }
 
-  // Add whatsapp: prefix only for WhatsApp channel
-  return channel === 'whatsapp' ? `whatsapp:${cleaned}` : cleaned;
+  // Add whatsapp: prefix
+  return `whatsapp:${cleaned}`;
 }
 
 export function registerRoutes(app: Express): Server {
@@ -62,7 +62,7 @@ export function registerRoutes(app: Express): Server {
     });
   };
 
-  // Webhook handler for all channels
+  // Webhook handler for WhatsApp messages
   app.post("/webhook", async (req, res) => {
     try {
       if (!twilioClient) {
@@ -70,12 +70,12 @@ export function registerRoutes(app: Express): Server {
       }
 
       console.log('Received webhook request');
-      console.log('Headers:', JSON.stringify(req.headers, null, 2));
       console.log('Body:', JSON.stringify(req.body, null, 2));
 
       // Validate Twilio signature
       const twilioSignature = req.headers['x-twilio-signature'];
-      const webhookUrl = `https://rapienergy.live/webhook`;
+      // Use actual host from request for webhook URL
+      const webhookUrl = `${req.protocol}://${req.get('host')}/webhook`;
 
       if (!twilioSignature || !process.env.TWILIO_AUTH_TOKEN) {
         console.error('Missing Twilio signature or auth token');
@@ -94,7 +94,6 @@ export function registerRoutes(app: Express): Server {
         return res.status(403).send('Forbidden: Invalid signature');
       }
 
-      // Extract message details
       const {
         From,
         To,
@@ -103,13 +102,13 @@ export function registerRoutes(app: Express): Server {
         ProfileName,
       } = req.body;
 
-      // Determine channel type
-      const isWhatsApp = From?.startsWith('whatsapp:') || To?.startsWith('whatsapp:');
-      const channel = isWhatsApp ? 'whatsapp' : 'sms';
-      const contactNumber = isWhatsApp ? From.replace('whatsapp:', '') : From;
+      // Only process WhatsApp messages
+      if (!From?.startsWith('whatsapp:')) {
+        return res.type('text/xml').send('<Response></Response>');
+      }
 
-      console.log(`Received ${channel} message from ${From}`);
-      console.log('Message details:', { From, To, Body, MessageSid });
+      const contactNumber = From.replace('whatsapp:', '');
+      console.log(`Received WhatsApp message from ${From}`);
 
       // Store message in database
       const message = await db
@@ -122,7 +121,7 @@ export function registerRoutes(app: Express): Server {
           status: "delivered",
           twilioSid: MessageSid,
           metadata: {
-            channel,
+            channel: 'whatsapp' as const,
             profile: {
               name: ProfileName
             }
@@ -130,49 +129,43 @@ export function registerRoutes(app: Express): Server {
         })
         .returning();
 
-      // Notify connected clients
-      broadcast({ type: "message_created", message: message[0] });
+      // Notify connected clients in real-time
+      broadcast({ 
+        type: "message_created", 
+        message: message[0],
+        contactNumber
+      });
 
-      // Return TwiML response
-      res.type('text/xml').send(`
-        <?xml version="1.0" encoding="UTF-8"?>
-        <Response></Response>
-      `);
+      res.type('text/xml').send('<Response></Response>');
     } catch (error: any) {
       console.error("Error processing webhook:", error);
       res.status(500).send("Internal server error");
     }
   });
 
-  // Send message using Messaging Service (supports SMS, WhatsApp, etc.)
+  // Send WhatsApp message
   app.post("/api/messages", async (req, res) => {
     try {
       if (!twilioClient) {
         throw new Error('Twilio client not initialized');
       }
 
-      const { contactNumber, content, channel = 'whatsapp' } = req.body;
+      const { contactNumber, content } = req.body;
 
       if (!contactNumber || !content) {
         throw new Error('Contact number and content are required');
       }
 
-      // Format the destination number based on channel
-      const toNumber = formatPhoneNumber(contactNumber, channel);
+      // Format the destination number for WhatsApp
+      const toNumber = formatWhatsAppNumber(contactNumber);
+      console.log('Sending WhatsApp message to:', toNumber);
 
-      console.log('Sending message via Messaging Service:');
-      console.log('Channel:', channel);
-      console.log('To:', toNumber);
-      console.log('Content:', content);
-
-      // Send message via Twilio Messaging Service
-      const messagingOptions = {
-        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+      // Send message via Twilio
+      const twilioMessage = await twilioClient.messages.create({
+        from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
         to: toNumber,
         body: content
-      };
-
-      const twilioMessage = await twilioClient.messages.create(messagingOptions);
+      });
 
       console.log('Message sent successfully:', twilioMessage.sid);
 
@@ -186,89 +179,81 @@ export function registerRoutes(app: Express): Server {
           status: twilioMessage.status,
           twilioSid: twilioMessage.sid,
           metadata: {
-            channel
+            channel: 'whatsapp' as const
           },
         })
         .returning();
 
-      broadcast({ type: "message_created", message: message[0] });
+      broadcast({ 
+        type: "message_created", 
+        message: message[0],
+        contactNumber 
+      });
+
       res.json(message[0]);
     } catch (error: any) {
       console.error("Error sending message:", error);
       res.status(500).json({
         message: "Failed to send message",
-        error: error.message,
-        code: error.code || 'UNKNOWN_ERROR'
+        error: error.message
       });
     }
   });
 
-  // Get all conversations across channels
+  // Get all WhatsApp conversations
   app.get("/api/conversations", async (_req, res) => {
     try {
       if (!twilioClient) {
         throw new Error('Twilio client not initialized');
       }
-      console.log('Fetching messages from Twilio...');
 
-      // Fetch more messages to ensure we have complete conversation history
+      console.log('Fetching WhatsApp conversations...');
+
+      // Fetch WhatsApp messages
       const twilioMessages = await twilioClient.messages.list({
-        limit: 100 // Increased limit to get more message history
+        limit: 100
       });
 
-      console.log(`Found ${twilioMessages.length} messages`);
+      // Filter and group WhatsApp messages
+      const conversations = twilioMessages
+        .filter(msg => msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:'))
+        .reduce((acc: any, msg: MessageInstance) => {
+          const contactNumber = (msg.direction === 'inbound' ? 
+            msg.from?.replace('whatsapp:', '') : 
+            msg.to?.replace('whatsapp:', ''))?.replace(/^\+/, '');
 
-      const conversations = twilioMessages.reduce((acc: any, msg: any) => {
-        const isWhatsApp = msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:');
-        const channel = isWhatsApp ? 'whatsapp' : 'sms';
+          const profile = msg.direction === 'inbound' ? {
+            name: (msg as any).profileName as string | undefined
+          } : undefined;
 
-        // Normalize the contact number by removing the whatsapp: prefix and ensuring consistent format
-        const contactNumber = (isWhatsApp ? 
-          (msg.direction === 'inbound' ? msg.from : msg.to)?.replace('whatsapp:', '') :
-          (msg.direction === 'inbound' ? msg.from : msg.to))?.replace(/^\+/, '');
-
-        if (!acc[contactNumber]) {
-          acc[contactNumber] = {
-            contactNumber: `+${contactNumber}`,
-            contactName: msg.direction === 'inbound' ? msg.profileName : undefined,
-            messageCount: 1,
-            channels: new Set([channel]),
-            latestMessage: {
-              id: msg.sid,
-              content: msg.body,
-              direction: msg.direction,
-              status: msg.status,
-              createdAt: msg.dateCreated,
-              channel
-            }
-          };
-        } else {
-          acc[contactNumber].messageCount++;
-          acc[contactNumber].channels.add(channel);
-
-          // Update latest message if this one is more recent
-          if (new Date(msg.dateCreated) > new Date(acc[contactNumber].latestMessage.createdAt)) {
+          if (!acc[contactNumber]) {
+            acc[contactNumber] = {
+              contactNumber: `+${contactNumber}`,
+              contactName: profile?.name,
+              latestMessage: {
+                id: msg.sid,
+                content: msg.body,
+                direction: msg.direction,
+                status: msg.status,
+                createdAt: msg.dateCreated,
+                channel: 'whatsapp' as const
+              }
+            };
+          } else if (new Date(msg.dateCreated) > new Date(acc[contactNumber].latestMessage.createdAt)) {
             acc[contactNumber].latestMessage = {
               id: msg.sid,
               content: msg.body,
               direction: msg.direction,
               status: msg.status,
               createdAt: msg.dateCreated,
-              channel
+              channel: 'whatsapp' as const
             };
           }
-        }
-        return acc;
-      }, {});
-
-      // Convert Set to array before sending response
-      const formattedConversations = Object.values(conversations).map((conv: any) => ({
-        ...conv,
-        channels: Array.from(conv.channels)
-      }));
+          return acc;
+        }, {});
 
       // Sort conversations by latest message date
-      const sortedConversations = formattedConversations.sort((a: any, b: any) => 
+      const sortedConversations = Object.values(conversations).sort((a: any, b: any) => 
         new Date(b.latestMessage.createdAt).getTime() - new Date(a.latestMessage.createdAt).getTime()
       );
 
@@ -290,37 +275,39 @@ export function registerRoutes(app: Express): Server {
       }
 
       const { contactNumber } = req.params;
-      console.log(`Fetching messages for contact: ${contactNumber}`);
+      console.log(`Fetching WhatsApp messages for contact: ${contactNumber}`);
 
-      // Fetch both WhatsApp and SMS messages for the contact
+      // Format WhatsApp number for querying
+      const whatsappNumber = formatWhatsAppNumber(contactNumber);
+
+      // Fetch WhatsApp message history
       const messages = await twilioClient.messages.list({
-        limit: 100, // Increased limit for more history
-        to: [contactNumber, `whatsapp:${contactNumber}`],
-        from: [contactNumber, `whatsapp:${contactNumber}`]
+        limit: 100,
+        to: whatsappNumber,
+        from: whatsappNumber
       });
 
-      const formattedMessages = messages.map(msg => {
-        const isWhatsApp = msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:');
-        return {
+      const formattedMessages = messages
+        .filter(msg => msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:'))
+        .map(msg => ({
           id: msg.sid,
-          contactNumber: isWhatsApp ? 
-            (msg.direction === 'inbound' ? msg.from : msg.to)?.replace('whatsapp:', '') :
-            (msg.direction === 'inbound' ? msg.from : msg.to),
+          contactNumber: msg.direction === 'inbound' ? 
+            msg.from?.replace('whatsapp:', '') : 
+            msg.to?.replace('whatsapp:', ''),
           content: msg.body || '',
           direction: msg.direction,
           status: msg.status,
           twilioSid: msg.sid,
           metadata: {
-            channel: isWhatsApp ? 'whatsapp' : 'sms',
+            channel: 'whatsapp' as const,
             profile: msg.direction === 'inbound' ? {
-              name: msg.profileName
+              name: (msg as any).profileName as string | undefined
             } : undefined
           },
           createdAt: msg.dateCreated
-        };
-      });
+        }));
 
-      // Sort messages by date
+      // Sort messages chronologically
       const sortedMessages = formattedMessages.sort((a, b) => 
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       );
@@ -335,46 +322,30 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Get Messaging Service details
+  // Get Twilio Service Status
   app.get("/api/twilio/status", async (_req, res) => {
     try {
       if (!twilioClient) {
         throw new Error('Twilio client not initialized');
       }
 
-      const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
-      if (!messagingServiceSid) {
-        throw new Error('Messaging Service SID not configured');
-      }
-
-      // Get Messaging Service details
-      const service = await twilioClient.messaging.v1.services(messagingServiceSid).fetch();
-
-      // Get phone numbers associated with the Messaging Service
-      const phoneNumbers = await twilioClient.messaging.v1
-        .services(messagingServiceSid)
-        .phoneNumbers
-        .list();
-
-      const primaryNumber = phoneNumbers.find(num => num.phoneNumber.endsWith('6311'));
+      // Get WhatsApp capable number
+      const whatsappNumber = process.env.TWILIO_PHONE_NUMBER;
 
       res.json({
         status: "connected",
-        friendlyName: service.friendlyName || 'Messaging Service',
-        whatsappNumber: primaryNumber?.phoneNumber || undefined,
-        inboundRequestUrl: service.inboundRequestUrl,
-        useInboundWebhookOnNumber: service.useInboundWebhookOnNumber,
-        channels: ['sms', 'whatsapp', 'voice']
+        friendlyName: "WhatsApp Messaging",
+        whatsappNumber: whatsappNumber ? `+${whatsappNumber}` : undefined
       });
     } catch (error: any) {
-      console.error("Messaging Service connection error:", error);
+      console.error("Twilio connection error:", error);
       res.status(500).json({
         status: 'error',
-        message: error.message,
-        code: error.code || 'MESSAGING_SERVICE_ERROR'
+        message: error.message
       });
     }
   });
+
 
   // Test Messaging Service configuration
   app.get("/api/twilio/test", async (_req, res) => {
@@ -382,60 +353,15 @@ export function registerRoutes(app: Express): Server {
       if (!twilioClient) {
         throw new Error('Twilio client not initialized');
       }
-
-      const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
-      if (!messagingServiceSid) {
-        throw new Error('Messaging Service SID not configured');
-      }
-
-      // Get Messaging Service details
-      const service = await twilioClient.messaging.v1.services(messagingServiceSid).fetch();
-
-      // Get phone numbers associated with the Messaging Service
-      const phoneNumbers = await twilioClient.messaging.v1
-        .services(messagingServiceSid)
-        .phoneNumbers
-        .list();
-
-      const primaryNumber = phoneNumbers.find(num => num.phoneNumber.endsWith('6311'));
-
-      if (!primaryNumber) {
-        throw new Error('Primary phone number not found in Messaging Service');
-      }
-
-      // Send test message using Messaging Service
-      const testMessage = await twilioClient.messages.create({
-        messagingServiceSid,
-        to: primaryNumber.phoneNumber, // Send to our own number for testing
-        body: "Test message from Messaging Service"
+      const message = await twilioClient.messages.create({
+        body: 'Test message from Twilio',
+        from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
+        to: `whatsapp:+15558675310`
       });
-
-      res.json({
-        status: "success",
-        service: {
-          sid: service.sid,
-          friendlyName: service.friendlyName,
-          inboundRequestUrl: service.inboundRequestUrl
-        },
-        message: {
-          sid: testMessage.sid,
-          status: testMessage.status,
-          from: testMessage.from,
-          to: testMessage.to
-        },
-        phoneNumbers: phoneNumbers.map(num => ({
-          sid: num.sid,
-          phoneNumber: num.phoneNumber,
-          capabilities: num.capabilities
-        }))
-      });
+      res.json({ message: 'Test message sent successfully', sid: message.sid });
     } catch (error: any) {
-      console.error("Messaging Service test failed:", error);
-      res.status(500).json({
-        status: 'error',
-        message: error.message,
-        code: error.code || 'TEST_FAILED'
-      });
+      console.error("Error sending test message:", error);
+      res.status(500).json({ message: 'Failed to send test message', error: error.message });
     }
   });
 

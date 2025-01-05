@@ -2,14 +2,19 @@ import { useState } from "react";
 import { useConversations } from "@/lib/api";
 import { MessageThread } from "@/components/MessageThread";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MessageSquare, AlertCircle, Phone } from "lucide-react";
+import { MessageSquare, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 
 export function Dashboard() {
   const [selectedNumber, setSelectedNumber] = useState<string | null>(null);
   const { data: conversations, isLoading } = useConversations();
-  const { data: twilioStatus } = useQuery({
+  const { data: twilioStatus } = useQuery<{
+    status: string;
+    friendlyName: string;
+    whatsappNumber?: string;
+    message?: string;
+  }>({
     queryKey: ["/api/twilio/status"],
     refetchInterval: 30000,
   });
@@ -75,18 +80,10 @@ export function Dashboard() {
                         <span className="text-xs text-zinc-400">{time}</span>
                       </div>
                       <div className="flex items-center gap-2 mb-1">
-                        {conversation.channels.includes("whatsapp") && (
-                          <Badge variant="secondary" className="text-xs">
-                            <MessageSquare className="h-3 w-3 mr-1" />
-                            WhatsApp
-                          </Badge>
-                        )}
-                        {conversation.channels.includes("sms") && (
-                          <Badge variant="secondary" className="text-xs">
-                            <Phone className="h-3 w-3 mr-1" />
-                            SMS
-                          </Badge>
-                        )}
+                        <Badge variant="secondary" className="text-xs">
+                          <MessageSquare className="h-3 w-3 mr-1" />
+                          WhatsApp
+                        </Badge>
                       </div>
                       <div className="text-sm text-zinc-400 truncate">
                         {conversation.latestMessage.content}
