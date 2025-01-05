@@ -86,7 +86,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
                   )}
                 >
                   {`${formatMessageTime(message.createdAt)} [${message.direction}] ${message.content}`}
-                  <span className="text-zinc-500"> :: {message.status}</span>
+                  <span className="text-zinc-500"> :: ${message.status}</span>
                 </div>
               );
             })}

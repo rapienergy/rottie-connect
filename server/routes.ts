@@ -265,11 +265,9 @@ export function registerRoutes(app: Express): Server {
 
       const { contactNumber } = req.params;
 
-      console.log(`Fetching messages for conversation with ${contactNumber}`);
-
-      // Fetch messages with a higher limit to ensure we get the full history
+      // Fetch messages for both directions (to/from this contact)
       const messages = await twilioClient.messages.list({
-        limit: 500,
+        limit: 100,
       });
 
       // Filter messages for this specific contact's conversation
@@ -278,42 +276,35 @@ export function registerRoutes(app: Express): Server {
         const normalizedTo = msg.to?.replace('whatsapp:', '');
         const normalizedFrom = msg.from?.replace('whatsapp:', '');
 
-        // Message is part of this conversation if:
-        // 1. This contact sent a message to our number (inbound)
-        // 2. Our number sent a message to this contact (outbound)
-        return (
-          (normalizedFrom === contactNumber && normalizedTo?.endsWith('6311')) ||
-          (normalizedTo === contactNumber && normalizedFrom?.endsWith('6311'))
-        );
+        // Include messages where this contact is either sender or receiver
+        return normalizedTo === contactNumber || normalizedFrom === contactNumber;
       });
-
-      console.log(`Found ${contactMessages.length} messages for contact ${contactNumber}`);
 
       // Map and format messages
-      const formattedMessages = contactMessages.map(msg => {
-        const isInbound = msg.direction === 'inbound';
-        return {
-          id: msg.sid,
-          contactNumber: isInbound ? msg.from?.replace('whatsapp:', '') : msg.to?.replace('whatsapp:', ''),
-          content: msg.body || '',
-          direction: msg.direction,
-          status: msg.status,
-          twilioSid: msg.sid,
-          metadata: {
-            channel: msg.to?.startsWith('whatsapp:') ? 'whatsapp' : 'sms',
-            profile: {
-              name: isInbound ? msg.from : msg.to
-            }
-          },
-          createdAt: msg.dateCreated
-        };
-      });
+      const formattedMessages = contactMessages.map(msg => ({
+        id: msg.sid,
+        contactNumber: msg.direction === 'inbound' ? 
+          msg.from?.replace('whatsapp:', '') :
+          msg.to?.replace('whatsapp:', ''),
+        content: msg.body || '',
+        direction: msg.direction,
+        status: msg.status,
+        twilioSid: msg.sid,
+        metadata: {
+          channel: 'whatsapp',
+          profile: {
+            name: msg.direction === 'inbound' ? msg.from : msg.to
+          }
+        },
+        createdAt: msg.dateCreated
+      }));
 
       // Sort messages by date
       formattedMessages.sort((a, b) => 
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       );
 
+      console.log(`Found ${formattedMessages.length} messages for contact ${contactNumber}`);
       res.json(formattedMessages);
     } catch (error: any) {
       console.error("Error fetching messages:", error);
