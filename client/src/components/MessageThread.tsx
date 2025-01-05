@@ -15,7 +15,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
   const sendMessage = useSendMessage();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const systemNumber = process.env.TWILIO_PHONE_NUMBER || '';
+  const systemNumber = import.meta.env.VITE_TWILIO_PHONE_NUMBER || '';
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
