@@ -3,7 +3,7 @@ import { useMessages, useSendMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Send, Check, CheckCheck } from "lucide-react";
+import { Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface MessageThreadProps {
