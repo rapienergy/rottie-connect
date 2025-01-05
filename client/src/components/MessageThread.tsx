@@ -11,7 +11,7 @@ interface MessageThreadProps {
 }
 
 export function MessageThread({ contactNumber }: MessageThreadProps) {
-  const { data: messages, isLoading: messagesLoading } = useMessages(contactNumber);
+  const { data: messages, isLoading } = useMessages(contactNumber);
   const sendMessage = useSendMessage();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -63,7 +63,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-2 font-mono">
-        {messagesLoading ? (
+        {isLoading ? (
           <div className="space-y-4">
             {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-6 w-3/4 bg-zinc-800" />
