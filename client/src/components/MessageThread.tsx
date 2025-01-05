@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useMessages, useContacts, useSendMessage } from "@/lib/api";
+import { useMessages, useSendMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -7,15 +7,13 @@ import { Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface MessageThreadProps {
-  contactId: number;
+  contactNumber: string;
 }
 
-export function MessageThread({ contactId }: MessageThreadProps) {
-  const { data: messages, isLoading: messagesLoading } = useMessages(contactId);
-  const { data: contacts } = useContacts();
+export function MessageThread({ contactNumber }: MessageThreadProps) {
+  const { data: messages, isLoading: messagesLoading } = useMessages(contactNumber);
   const sendMessage = useSendMessage();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const contact = contacts?.find((c) => c.id === contactId);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -28,17 +26,19 @@ export function MessageThread({ contactId }: MessageThreadProps) {
 
     if (!content.trim()) return;
 
-    await sendMessage.mutateAsync({ contactId, content });
+    await sendMessage.mutateAsync({ contactNumber, content });
     form.reset();
   };
-
-  if (!contact) return null;
 
   return (
     <div className="h-full flex flex-col bg-black rounded-lg border border-zinc-800">
       <div className="p-4 border-b border-zinc-800">
-        <h2 className="font-mono text-white">{contact.name}</h2>
-        <p className="font-mono text-sm text-zinc-400">{contact.phone}</p>
+        <h2 className="font-mono text-white">
+          {messages?.[0]?.contactName || contactNumber}
+        </h2>
+        <p className="font-mono text-sm text-zinc-400">
+          Channel: {messages?.[0]?.metadata?.channel || 'whatsapp'}
+        </p>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-2 font-mono bg-black">

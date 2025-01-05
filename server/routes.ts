@@ -2,9 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
 import { db } from "@db";
-import { contacts, messages } from "@db/schema";
+import { messages } from "@db/schema";
 import { eq, desc } from "drizzle-orm";
-import type { Twilio } from "twilio";
 import twilio from "twilio";
 
 // Validate required Twilio environment variables
@@ -54,39 +53,39 @@ export function registerRoutes(app: Express): Server {
     });
   });
 
-  // Contacts API
-  app.get("/api/contacts", async (_req, res) => {
-    try {
-      const result = await db.query.contacts.findMany({
-        orderBy: desc(contacts.updatedAt),
-      });
-      res.json(result);
-    } catch (error) {
-      console.error("Error fetching contacts:", error);
-      res.status(500).json({ message: "Failed to fetch contacts" });
-    }
-  });
-
-  app.post("/api/contacts", async (req, res) => {
-    try {
-      const contact = await db.insert(contacts).values(req.body).returning();
-      broadcast({ type: "contact_created", contact: contact[0] });
-      res.json(contact[0]);
-    } catch (error) {
-      console.error("Error creating contact:", error);
-      res.status(500).json({ message: "Failed to create contact" });
-    }
-  });
-
-  // Messages API
-  app.get("/api/messages/:contactId", async (req, res) => {
+  // Get all conversations (grouped messages by contact)
+  app.get("/api/conversations", async (_req, res) => {
     try {
       const result = await db.query.messages.findMany({
-        where: eq(messages.contactId, parseInt(req.params.contactId)),
         orderBy: desc(messages.createdAt),
-        with: {
-          contact: true,
-        },
+      });
+
+      // Group messages by contact number and get latest message
+      const conversations = result.reduce((acc, message) => {
+        if (!acc[message.contactNumber]) {
+          acc[message.contactNumber] = {
+            contactNumber: message.contactNumber,
+            contactName: message.contactName,
+            latestMessage: message,
+            channel: message.metadata?.channel || 'whatsapp',
+          };
+        }
+        return acc;
+      }, {} as Record<string, any>);
+
+      res.json(Object.values(conversations));
+    } catch (error) {
+      console.error("Error fetching conversations:", error);
+      res.status(500).json({ message: "Failed to fetch conversations" });
+    }
+  });
+
+  // Get messages for a specific conversation
+  app.get("/api/conversations/:contactNumber/messages", async (req, res) => {
+    try {
+      const result = await db.query.messages.findMany({
+        where: eq(messages.contactNumber, req.params.contactNumber),
+        orderBy: desc(messages.createdAt),
       });
       res.json(result);
     } catch (error) {
@@ -95,31 +94,26 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Send a message
   app.post("/api/messages", async (req, res) => {
     try {
-      const contact = await db.query.contacts.findFirst({
-        where: eq(contacts.id, req.body.contactId),
-      });
-
-      if (!contact) {
-        res.status(404).json({ message: "Contact not found" });
-        return;
-      }
+      const { contactNumber, content } = req.body;
 
       const twilioMessage = await twilioClient.messages.create({
-        body: req.body.content,
-        to: contact.phone,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID, // Optional: for multi-channel messaging
+        body: content,
+        to: `whatsapp:${contactNumber}`,
+        from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
       });
 
       const message = await db
         .insert(messages)
         .values({
-          ...req.body,
+          contactNumber,
+          content,
           direction: "outbound",
           status: "sent",
           twilioSid: twilioMessage.sid,
+          metadata: { channel: 'whatsapp' },
         })
         .returning();
 
@@ -131,30 +125,24 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Twilio webhook for incoming messages (SMS, WhatsApp)
+  // Twilio webhook for incoming messages
   app.post("/api/twilio/webhook", async (req, res) => {
     try {
-      const { From, Body, MessageSid, Channel = 'sms' } = req.body;
-
-      const contact = await db.query.contacts.findFirst({
-        where: eq(contacts.phone, From),
-      });
-
-      if (!contact) {
-        console.warn(`Received message from unknown contact: ${From}`);
-        res.status(404).send("Contact not found");
-        return;
-      }
+      const { From, Body, MessageSid, ProfileName } = req.body;
 
       const message = await db
         .insert(messages)
         .values({
-          contactId: contact.id,
+          contactNumber: From.replace('whatsapp:', ''),
+          contactName: ProfileName,
           content: Body,
           direction: "inbound",
           status: "delivered",
           twilioSid: MessageSid,
-          metadata: { channel: Channel },
+          metadata: {
+            channel: 'whatsapp',
+            profile: { name: ProfileName },
+          },
         })
         .returning();
 
@@ -162,54 +150,6 @@ export function registerRoutes(app: Express): Server {
       res.status(200).send();
     } catch (error) {
       console.error("Error processing webhook:", error);
-      res.status(500).send("Internal server error");
-    }
-  });
-
-  // Twilio webhook for voice calls
-  app.post("/api/twilio/voice", (req, res) => {
-    const twiml = new twilio.twiml.VoiceResponse();
-    twiml.say('Thank you for calling RAPIENERGY. Please leave a message after the tone.');
-    twiml.record({
-      action: '/api/twilio/recording',
-      maxLength: 30,
-      playBeep: true,
-    });
-    res.type('text/xml');
-    res.send(twiml.toString());
-  });
-
-  // Handle recorded voice messages
-  app.post("/api/twilio/recording", async (req, res) => {
-    try {
-      const { From, RecordingUrl, RecordingSid } = req.body;
-
-      const contact = await db.query.contacts.findFirst({
-        where: eq(contacts.phone, From),
-      });
-
-      if (!contact) {
-        console.warn(`Received voice message from unknown contact: ${From}`);
-        res.status(404).send("Contact not found");
-        return;
-      }
-
-      const message = await db
-        .insert(messages)
-        .values({
-          contactId: contact.id,
-          content: `Voice message: ${RecordingUrl}`,
-          direction: "inbound",
-          status: "delivered",
-          twilioSid: RecordingSid,
-          metadata: { type: 'voice', recordingUrl: RecordingUrl },
-        })
-        .returning();
-
-      broadcast({ type: "message_created", message: message[0] });
-      res.status(200).send();
-    } catch (error) {
-      console.error("Error processing voice recording:", error);
       res.status(500).send("Internal server error");
     }
   });

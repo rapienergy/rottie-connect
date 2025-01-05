@@ -2,78 +2,62 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient } from "./queryClient";
 import { toast } from "@/hooks/use-toast";
 
-export interface Contact {
-  id: number;
-  name: string;
-  phone: string;
-  email?: string;
-}
-
 export interface Message {
   id: number;
-  contactId: number;
+  contactNumber: string;
+  contactName?: string;
   content: string;
   direction: "inbound" | "outbound";
   status: string;
+  twilioSid?: string;
+  metadata?: {
+    channel: 'whatsapp' | 'sms' | 'voice';
+    profile?: {
+      name?: string;
+      avatar?: string;
+    };
+  };
   createdAt: string;
 }
 
-export function useContacts() {
-  return useQuery<Contact[]>({ queryKey: ["/api/contacts"] });
+export interface Conversation {
+  contactNumber: string;
+  contactName?: string;
+  latestMessage: Message;
+  channel: 'whatsapp' | 'sms' | 'voice';
 }
 
-export function useMessages(contactId: number) {
+export function useConversations() {
+  return useQuery<Conversation[]>({ queryKey: ["/api/conversations"] });
+}
+
+export function useMessages(contactNumber: string) {
   return useQuery<Message[]>({
-    queryKey: [`/api/messages/${contactId}`],
-    enabled: !!contactId,
-  });
-}
-
-export function useCreateContact() {
-  return useMutation({
-    mutationFn: async (contact: Omit<Contact, "id">) => {
-      const res = await fetch("/api/contacts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(contact),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
-      toast({ title: "Contact created successfully" });
-    },
-    onError: (error) => {
-      toast({
-        title: "Failed to create contact",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
+    queryKey: [`/api/conversations/${contactNumber}/messages`],
+    enabled: !!contactNumber,
   });
 }
 
 export function useSendMessage() {
   return useMutation({
     mutationFn: async ({
-      contactId,
+      contactNumber,
       content,
     }: {
-      contactId: number;
+      contactNumber: string;
       content: string;
     }) => {
       const res = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contactId, content }),
+        body: JSON.stringify({ contactNumber, content }),
       });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: [`/api/messages/${variables.contactId}`],
+        queryKey: [`/api/conversations/${variables.contactNumber}/messages`],
       });
       toast({ title: "Message sent successfully" });
     },
