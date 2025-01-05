@@ -48,6 +48,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     return new Date(dateStr).toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
+      second: '2-digit',
       hour12: true
     });
   };
@@ -61,7 +62,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
         <p className="font-mono text-sm text-zinc-400">WhatsApp Business</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
+      <div className="flex-1 overflow-y-auto p-4 space-y-2 font-mono">
         {messagesLoading ? (
           <div className="space-y-4">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -69,21 +70,19 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
             ))}
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {messages?.map((message) => (
               <div
                 key={message.id}
                 className={cn(
-                  "p-3 rounded-lg max-w-[80%]",
+                  "text-sm whitespace-pre-wrap font-mono",
                   message.direction === "outbound" 
-                    ? "ml-auto bg-green-900/30 text-green-400" 
-                    : "bg-zinc-800 text-white"
+                    ? "text-green-400" 
+                    : "text-red-400"
                 )}
               >
-                <div className="text-sm break-words">{message.content}</div>
-                <div className="text-xs mt-1 opacity-60">
-                  {formatMessageTime(message.createdAt)} · {message.status}
-                </div>
+                {`${formatMessageTime(message.createdAt)} [${message.direction}] ${message.content}`}
+                <span className="text-zinc-500"> :: ${message.status}</span>
               </div>
             ))}
             <div ref={messagesEndRef} />
