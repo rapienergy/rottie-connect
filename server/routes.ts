@@ -301,21 +301,33 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Verify Messaging Service status
+  // Get Messaging Service details
   app.get("/api/twilio/status", async (_req, res) => {
     try {
       if (!twilioClient) {
         throw new Error('Twilio client not initialized');
       }
 
+      const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+      if (!messagingServiceSid) {
+        throw new Error('Messaging Service SID not configured');
+      }
+
       // Get Messaging Service details
-      const service = await twilioClient.messaging.v1.services(
-        process.env.TWILIO_MESSAGING_SERVICE_SID || ''
-      ).fetch();
+      const service = await twilioClient.messaging.v1.services(messagingServiceSid).fetch();
+
+      // Get phone numbers associated with the Messaging Service
+      const phoneNumbers = await twilioClient.messaging.v1
+        .services(messagingServiceSid)
+        .phoneNumbers
+        .list();
+
+      const primaryNumber = phoneNumbers.find(num => num.phoneNumber.endsWith('6311'));
 
       res.json({
         status: "connected",
-        friendlyName: service.friendlyName,
+        friendlyName: service.friendlyName || 'Messaging Service',
+        whatsappNumber: primaryNumber?.phoneNumber || undefined,
         inboundRequestUrl: service.inboundRequestUrl,
         useInboundWebhookOnNumber: service.useInboundWebhookOnNumber,
         channels: ['sms', 'whatsapp', 'voice']
