@@ -88,8 +88,8 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
                   className={cn(
                     "text-sm whitespace-pre-wrap font-mono p-1 rounded",
                     isSystem
-                      ? "bg-red-900/50 text-red-400"
-                      : "bg-green-900/50 text-green-400"
+                      ? "bg-red-900 text-red-400"
+                      : "bg-green-900 text-green-400"
                   )}
                 >
                   {`${formatMessageTime(message.createdAt)} [${isSystem ? 'outbound' : 'inbound'}] ${message.content}`}
