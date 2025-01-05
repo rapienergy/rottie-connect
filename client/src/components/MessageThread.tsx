@@ -76,9 +76,9 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
                 key={message.id}
                 className={cn(
                   "text-sm whitespace-pre-wrap font-mono p-1 rounded",
-                  message.direction === "outbound" 
-                    ? "bg-red-900/50 text-red-400" 
-                    : "bg-green-900/50 text-green-400"
+                  message.direction === "inbound" 
+                    ? "bg-green-900/50 text-green-400" 
+                    : "bg-red-900/50 text-red-400"
                 )}
               >
                 {`${formatMessageTime(message.createdAt)} [${message.direction}] ${message.content}`}
