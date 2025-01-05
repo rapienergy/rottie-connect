@@ -23,11 +23,11 @@ export function Dashboard() {
             : 'bg-red-900/50 text-red-400'
         }`}>
           {twilioStatus.status === 'connected' ? (
-            `Connected to Twilio (${twilioStatus.friendlyName}) - WhatsApp number: ${twilioStatus.whatsappNumber}`
+            `Connected to WhatsApp Business API (${twilioStatus.friendlyName}) - Number: ${twilioStatus.whatsappNumber}`
           ) : (
             <div className="flex items-center gap-2">
               <AlertCircle className="h-4 w-4" />
-              <span>Twilio Connection Error: {twilioStatus.message}</span>
+              <span>WhatsApp Connection Error: {twilioStatus.message}</span>
             </div>
           )}
         </div>
@@ -49,7 +49,7 @@ export function Dashboard() {
               </div>
             ) : (
               <div className="space-y-1">
-                {conversations?.map((conversation) => {
+                {conversations?.filter(conv => conv.channel === 'whatsapp').map((conversation) => {
                   const time = new Date(conversation.latestMessage.createdAt)
                     .toLocaleTimeString('en-US', {
                       hour: 'numeric',
@@ -67,7 +67,7 @@ export function Dashboard() {
                       }`}
                     >
                       <div className="text-white">
-                        {`${time} [whatsapp] ${conversation.contactName || conversation.contactNumber}`}
+                        {`${time} ${conversation.contactName || conversation.contactNumber}`}
                       </div>
                       <div className="text-sm text-zinc-400 truncate">
                         {conversation.latestMessage.content}

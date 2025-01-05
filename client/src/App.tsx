@@ -15,10 +15,15 @@ function App() {
   return (
     <div className="min-h-screen bg-background">
       <nav className="border-b bg-card">
-        <div className="container mx-auto px-4 h-16 flex items-center">
-          <Link href="/" className="flex items-center space-x-2">
-            <MessageSquare className="h-6 w-6" />
-            <span className="font-semibold text-lg">RottieInteractions</span>
+        <div className="container mx-auto px-4 py-4">
+          <Link href="/" className="flex flex-col items-start">
+            <div className="flex items-center space-x-2">
+              <MessageSquare className="h-6 w-6" />
+              <span className="font-semibold text-lg">Rottie Connect</span>
+            </div>
+            <span className="text-sm text-muted-foreground ml-8">
+              Rapienergy Enterprise Interactions Platform
+            </span>
           </Link>
         </div>
       </nav>
