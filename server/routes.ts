@@ -264,21 +264,19 @@ export function registerRoutes(app: Express): Server {
       }
 
       const { contactNumber } = req.params;
-      const formattedWhatsApp = `whatsapp:${contactNumber}`;
 
       // Fetch messages for both directions (to/from this contact)
       const messages = await twilioClient.messages.list({
         limit: 100,
       });
 
-      // Filter messages for this contact's WhatsApp conversation
+      // Filter messages for this specific contact's conversation
       const contactMessages = messages.filter(msg => {
-        const isWhatsAppMessage = msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:');
-        if (!isWhatsAppMessage) return false;
-
+        // Get clean numbers without whatsapp: prefix
         const normalizedTo = msg.to?.replace('whatsapp:', '');
         const normalizedFrom = msg.from?.replace('whatsapp:', '');
 
+        // Include messages where this contact is either sender or receiver
         return normalizedTo === contactNumber || normalizedFrom === contactNumber;
       });
 
