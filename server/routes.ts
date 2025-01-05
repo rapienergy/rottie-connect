@@ -291,7 +291,7 @@ export function registerRoutes(app: Express): Server {
         status: msg.status,
         twilioSid: msg.sid,
         metadata: {
-          channel: 'whatsapp',
+          channel: msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:') ? 'whatsapp' : 'sms',
           profile: {
             name: msg.direction === 'inbound' ? msg.from : msg.to
           }
