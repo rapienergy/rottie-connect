@@ -49,13 +49,8 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
       hour: 'numeric',
       minute: '2-digit',
       second: '2-digit',
-      hour12: false
+      hour12: true
     });
-  };
-
-  // Helper to determine if a message is outbound (from us to client)
-  const isOutboundMessage = (message: any) => {
-    return message.direction === "outbound";
   };
 
   // Sort messages by time
@@ -82,7 +77,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
         ) : (
           <div className="space-y-4">
             {sortedMessages?.map((message) => {
-              const isOutbound = isOutboundMessage(message);
+              const isOutbound = message.direction === "outbound";
               const time = formatMessageTime(message.createdAt);
               return (
                 <div
