@@ -342,5 +342,68 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Test Messaging Service configuration
+  app.get("/api/twilio/test", async (_req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+      if (!messagingServiceSid) {
+        throw new Error('Messaging Service SID not configured');
+      }
+
+      // Get Messaging Service details
+      const service = await twilioClient.messaging.v1.services(messagingServiceSid).fetch();
+
+      // Get phone numbers associated with the Messaging Service
+      const phoneNumbers = await twilioClient.messaging.v1
+        .services(messagingServiceSid)
+        .phoneNumbers
+        .list();
+
+      const primaryNumber = phoneNumbers.find(num => num.phoneNumber.endsWith('6311'));
+
+      if (!primaryNumber) {
+        throw new Error('Primary phone number not found in Messaging Service');
+      }
+
+      // Send test message using Messaging Service
+      const testMessage = await twilioClient.messages.create({
+        messagingServiceSid,
+        to: primaryNumber.phoneNumber, // Send to our own number for testing
+        body: "Test message from Messaging Service"
+      });
+
+      res.json({
+        status: "success",
+        service: {
+          sid: service.sid,
+          friendlyName: service.friendlyName,
+          inboundRequestUrl: service.inboundRequestUrl
+        },
+        message: {
+          sid: testMessage.sid,
+          status: testMessage.status,
+          from: testMessage.from,
+          to: testMessage.to
+        },
+        phoneNumbers: phoneNumbers.map(num => ({
+          sid: num.sid,
+          phoneNumber: num.phoneNumber,
+          capabilities: num.capabilities
+        }))
+      });
+    } catch (error: any) {
+      console.error("Messaging Service test failed:", error);
+      res.status(500).json({
+        status: 'error',
+        message: error.message,
+        code: error.code || 'TEST_FAILED'
+      });
+    }
+  });
+
   return httpServer;
 }
