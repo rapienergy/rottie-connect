@@ -14,6 +14,14 @@ for (const envVar of requiredEnvVars) {
   }
 }
 
+// Format phone number for WhatsApp
+function formatWhatsAppNumber(number: string): string {
+  // Remove any non-digit characters except plus sign
+  const cleaned = number.replace(/[^\d+]/g, '');
+  // Remove any extra plus signs, ensuring only one at the start if present
+  return cleaned.replace(/\++/g, '+').replace(/^\+?/, '+');
+}
+
 // Initialize Twilio client with error handling
 let twilioClient;
 try {
@@ -23,13 +31,13 @@ try {
   );
 
   // Send a test message to verify WhatsApp sandbox connection
-  const whatsappNumber = process.env.TWILIO_PHONE_NUMBER!.replace(/[^\d+]/g, '');
+  const whatsappNumber = formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER!);
   console.log('Using WhatsApp number:', whatsappNumber);
 
   twilioClient.messages.create({
     body: "WhatsApp Sandbox Connection Test",
-    from: `whatsapp:+${whatsappNumber}`,
-    to: `whatsapp:+${whatsappNumber}`,
+    from: `whatsapp:${whatsappNumber}`,
+    to: `whatsapp:${whatsappNumber}`,
   }).then(message => {
     console.log('WhatsApp test message sent successfully:', message.sid);
   }).catch(error => {
@@ -75,25 +83,6 @@ export function registerRoutes(app: Express): Server {
     });
   });
 
-  // Verify Twilio connection and get account info
-  app.get("/api/twilio/status", async (_req, res) => {
-    try {
-      const account = await twilioClient.api.accounts(process.env.TWILIO_ACCOUNT_SID).fetch();
-      res.json({
-        status: 'connected',
-        friendlyName: account.friendlyName,
-        type: account.type,
-        whatsappNumber: process.env.TWILIO_PHONE_NUMBER
-      });
-    } catch (error: any) {
-      console.error("Error fetching Twilio account info:", error);
-      res.status(500).json({
-        status: 'error',
-        message: error.message
-      });
-    }
-  });
-
   // Get all WhatsApp messages from Twilio
   app.get("/api/conversations", async (_req, res) => {
     try {
@@ -110,7 +99,7 @@ export function registerRoutes(app: Express): Server {
       const whatsappMessages = twilioMessages
         .filter(msg => msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:'))
         .map(msg => ({
-          contactNumber: (msg.to?.startsWith('whatsapp:') ? msg.from : msg.to)?.replace('whatsapp:', '') || '',
+          contactNumber: formatWhatsAppNumber((msg.to?.startsWith('whatsapp:') ? msg.from : msg.to)?.replace('whatsapp:', '') || ''),
           content: msg.body || '',
           direction: msg.direction,
           status: msg.status,
@@ -130,14 +119,10 @@ export function registerRoutes(app: Express): Server {
           acc[message.contactNumber] = {
             contactNumber: message.contactNumber,
             latestMessage: message,
-            channel: 'whatsapp',
-            messageCount: 1
+            channel: 'whatsapp'
           };
-        } else {
-          acc[message.contactNumber].messageCount++;
-          if (new Date(message.createdAt) > new Date(acc[message.contactNumber].latestMessage.createdAt)) {
-            acc[message.contactNumber].latestMessage = message;
-          }
+        } else if (new Date(message.createdAt) > new Date(acc[message.contactNumber].latestMessage.createdAt)) {
+          acc[message.contactNumber].latestMessage = message;
         }
         return acc;
       }, {} as Record<string, any>);
@@ -152,17 +137,18 @@ export function registerRoutes(app: Express): Server {
   // Get messages for a specific conversation
   app.get("/api/conversations/:contactNumber/messages", async (req, res) => {
     try {
+      const formattedNumber = formatWhatsAppNumber(req.params.contactNumber);
       const twilioMessages = await twilioClient.messages.list({
         limit: 50,
-        to: `whatsapp:${req.params.contactNumber}`,
-        from: `whatsapp:${req.params.contactNumber}`
+        to: `whatsapp:${formattedNumber}`,
+        from: `whatsapp:${formattedNumber}`
       });
 
       const messages = twilioMessages
         .filter(msg => msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:'))
         .map(msg => ({
           id: msg.sid,
-          contactNumber: (msg.to?.startsWith('whatsapp:') ? msg.from : msg.to)?.replace('whatsapp:', '') || '',
+          contactNumber: formatWhatsAppNumber((msg.to?.startsWith('whatsapp:') ? msg.from : msg.to)?.replace('whatsapp:', '') || ''),
           content: msg.body || '',
           direction: msg.direction,
           status: msg.status,
@@ -187,12 +173,13 @@ export function registerRoutes(app: Express): Server {
   app.post("/api/messages", async (req, res) => {
     try {
       const { contactNumber, content } = req.body;
-      console.log(`Sending WhatsApp message to ${contactNumber}`);
+      const formattedNumber = formatWhatsAppNumber(contactNumber);
+      console.log(`Sending WhatsApp message to ${formattedNumber}`);
 
       const twilioMessage = await twilioClient.messages.create({
         body: content,
-        to: `whatsapp:+${contactNumber}`,
-        from: `whatsapp:+${process.env.TWILIO_PHONE_NUMBER}`,
+        to: `whatsapp:${formattedNumber}`,
+        from: `whatsapp:${formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER!)}`,
       });
 
       console.log(`Message sent successfully, SID: ${twilioMessage.sid}`);
@@ -200,16 +187,13 @@ export function registerRoutes(app: Express): Server {
       const message = await db
         .insert(messages)
         .values({
-          contactNumber,
+          contactNumber: formattedNumber,
           content,
           direction: "outbound",
           status: twilioMessage.status,
           twilioSid: twilioMessage.sid,
           metadata: {
-            channel: 'whatsapp',
-            profile: {
-              name: twilioMessage.to // Store recipient's number as name if no profile name available
-            }
+            channel: 'whatsapp'
           },
         })
         .returning();
@@ -243,7 +227,7 @@ export function registerRoutes(app: Express): Server {
       const message = await db
         .insert(messages)
         .values({
-          contactNumber: From.replace('whatsapp:', ''),
+          contactNumber: formatWhatsAppNumber(From.replace('whatsapp:', '')),
           contactName: ProfileName || From.replace('whatsapp:', ''),
           content: Body,
           direction: "inbound",

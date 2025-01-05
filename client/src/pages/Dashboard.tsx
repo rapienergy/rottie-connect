@@ -72,9 +72,6 @@ export function Dashboard() {
                       <div className="text-sm text-zinc-400 truncate">
                         {conversation.latestMessage.content}
                       </div>
-                      <div className="text-xs text-zinc-500">
-                        {conversation.messageCount} messages
-                      </div>
                     </button>
                   );
                 })}
