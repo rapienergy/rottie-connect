@@ -89,18 +89,32 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
             ))}
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-4">
             {sortedMessages?.map((message) => {
               const isOutbound = isOutboundMessage(message);
+              const time = formatMessageTime(message.createdAt);
               return (
                 <div
                   key={message.id}
                   className={cn(
-                    "text-sm whitespace-pre-wrap p-2 rounded font-mono",
-                    isOutbound ? "bg-red-900 text-white" : "bg-green-900 text-white"
+                    "flex",
+                    isOutbound ? "justify-end" : "justify-start"
                   )}
                 >
-                  {formatMessageLine(message, isOutbound)}
+                  <div
+                    className={cn(
+                      "max-w-[80%] text-sm whitespace-pre-wrap p-3 rounded-lg font-mono",
+                      isOutbound ? "bg-red-900 text-white" : "bg-green-900 text-white"
+                    )}
+                  >
+                    <div className="opacity-70 text-xs mb-1">
+                      {time} {isOutbound ? "[Rottie]" : "[inbound]"}
+                    </div>
+                    <div>{message.content}</div>
+                    <div className="text-xs opacity-70 mt-1 text-right">
+                      {message.status.toLowerCase()}
+                    </div>
+                  </div>
                 </div>
               );
             })}
