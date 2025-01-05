@@ -21,8 +21,8 @@ function formatWhatsAppNumber(number: string, isBusinessNumber = false): string 
   // Ensure there's exactly one plus sign at the start
   const formatted = cleaned.replace(/\++/g, '+').replace(/^\+?/, '+');
 
-  // For sending messages, we need the full whatsapp: prefix
-  return isBusinessNumber ? `whatsapp:${formatted}` : `whatsapp:${formatted}`;
+  // For business numbers, we need the whatsapp: prefix
+  return isBusinessNumber ? `whatsapp:${formatted}` : formatted;
 }
 
 // Initialize Twilio client with error handling
@@ -56,19 +56,39 @@ export function registerRoutes(app: Express): Server {
     });
   };
 
-  // WebSocket connection handling
-  wss.on("connection", (ws) => {
-    console.log('New WebSocket connection established');
-    ws.on("message", (data) => {
-      try {
-        const message = JSON.parse(data.toString());
-        if (message.type === "ping") {
-          ws.send(JSON.stringify({ type: "pong" }));
-        }
-      } catch (error) {
-        console.error("WebSocket message error:", error);
+  // Verify Twilio WhatsApp configuration
+  app.get("/api/twilio/status", async (_req, res) => {
+    try {
+      // First verify the account
+      const account = await twilioClient.api.accounts(process.env.TWILIO_ACCOUNT_SID).fetch();
+
+      // Then verify if this number is enabled for WhatsApp
+      const incomingPhoneNumbers = await twilioClient.incomingPhoneNumbers.list({phoneNumber: process.env.TWILIO_PHONE_NUMBER});
+      const hasWhatsAppCapability = incomingPhoneNumbers.some(number => 
+        number.capabilities?.sms && number.capabilities?.voice
+      );
+
+      if (!hasWhatsAppCapability) {
+        throw new Error('The provided phone number is not enabled for WhatsApp Business API');
       }
-    });
+
+      res.json({
+        status: 'connected',
+        friendlyName: account.friendlyName,
+        type: account.type,
+        whatsappNumber: process.env.TWILIO_PHONE_NUMBER,
+        capabilities: {
+          whatsapp: hasWhatsAppCapability
+        }
+      });
+    } catch (error: any) {
+      console.error("Error verifying Twilio WhatsApp configuration:", error);
+      res.status(500).json({
+        status: 'error',
+        message: error.message,
+        code: error.code || 'CONFIGURATION_ERROR'
+      });
+    }
   });
 
   // Get all WhatsApp messages from Twilio
