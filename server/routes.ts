@@ -48,45 +48,6 @@ function formatWhatsAppNumber(phoneNumber: string): string {
   return `whatsapp:${cleaned}`;
 }
 
-async function verifyWhatsAppBusinessProfile() {
-  try {
-    // Get account information
-    const account = await twilioClient.api.accounts(process.env.TWILIO_ACCOUNT_SID!).fetch();
-
-    // Get WhatsApp-enabled phone numbers
-    const phoneNumbers = await twilioClient.incomingPhoneNumbers.list();
-    const businessNumber = phoneNumbers.find(n => 
-      n.phoneNumber === process.env.TWILIO_PHONE_NUMBER || 
-      n.phoneNumber === formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER!)
-    );
-
-    if (!businessNumber) {
-      throw new Error('WhatsApp Business number not found in your Twilio account');
-    }
-
-    // Verify messaging service configuration
-    const messagingServices = await twilioClient.messaging.v1.services.list();
-    const whatsappService = messagingServices.find(s => 
-      s.inboundRequestUrl?.includes('whatsapp') || 
-      s.fallbackUrl?.includes('whatsapp')
-    );
-
-    return {
-      status: 'connected',
-      accountType: account.type,
-      businessProfile: {
-        friendlyName: businessNumber.friendlyName,
-        phoneNumber: businessNumber.phoneNumber,
-        whatsappEnabled: !!whatsappService,
-        capabilities: businessNumber.capabilities
-      }
-    };
-  } catch (error: any) {
-    console.error('Error verifying WhatsApp Business profile:', error);
-    throw new Error(`WhatsApp Business verification failed: ${error.message}`);
-  }
-}
-
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
   const wss = new WebSocketServer({ 
@@ -105,21 +66,6 @@ export function registerRoutes(app: Express): Server {
     });
   };
 
-  // Verify WhatsApp Business Profile status
-  app.get("/api/twilio/status", async (_req, res) => {
-    try {
-      const profile = await verifyWhatsAppBusinessProfile();
-      res.json(profile);
-    } catch (error: any) {
-      console.error("WhatsApp Business API connection error:", error);
-      res.status(500).json({
-        status: 'error',
-        message: error.message,
-        code: error.code || 'WHATSAPP_CONFIGURATION_ERROR'
-      });
-    }
-  });
-
   // Send WhatsApp message
   app.post("/api/messages", async (req, res) => {
     try {
@@ -128,9 +74,6 @@ export function registerRoutes(app: Express): Server {
       if (!contactNumber || !content) {
         throw new Error('Contact number and content are required');
       }
-
-      // Verify WhatsApp Business profile before sending
-      await verifyWhatsAppBusinessProfile();
 
       // Format the numbers for WhatsApp Business API
       const fromNumber = formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER!);
@@ -226,7 +169,71 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Get messages for a specific conversation
+  // Twilio webhook for incoming messages
+  app.post("/whatsapp/webhook", async (req, res) => {
+    try {
+      // Validate that the request is coming from Twilio
+      const twilioSignature = req.headers['x-twilio-signature'];
+      const url = `https://rapienergy.live/whatsapp/webhook`; // Use the production URL
+      const params = req.body;
+
+      const requestIsValid = twilio.validateRequest(
+        process.env.TWILIO_AUTH_TOKEN!,
+        twilioSignature as string,
+        url,
+        params
+      );
+
+      if (!requestIsValid) {
+        console.error('Invalid Twilio signature');
+        return res.status(403).send('Forbidden');
+      }
+
+      const {
+        From,
+        To,
+        Body,
+        MessageSid,
+        ProfileName,
+        WaId // WhatsApp ID
+      } = req.body;
+
+      console.log(`Received WhatsApp message from ${From} (${ProfileName || 'Unknown'})`);
+
+      const message = await db
+        .insert(messages)
+        .values({
+          contactNumber: From.replace('whatsapp:', ''),
+          contactName: ProfileName || undefined,
+          content: Body,
+          direction: "inbound",
+          status: "delivered",
+          twilioSid: MessageSid,
+          metadata: {
+            channel: 'whatsapp',
+            profile: {
+              name: ProfileName
+            }
+          },
+        })
+        .returning();
+
+      console.log(`Stored incoming message with ID: ${message[0].id}`);
+      broadcast({ type: "message_created", message: message[0] });
+
+      // Send a TwiML response
+      res.type('text/xml').send(`
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Response>
+          <Message>Message received by RAPIENERGY WhatsApp Service</Message>
+        </Response>
+      `);
+    } catch (error) {
+      console.error("Error processing webhook:", error);
+      res.status(500).send("Internal server error");
+    }
+  });
+    // Get messages for a specific conversation
   app.get("/api/conversations/:contactNumber/messages", async (req, res) => {
     try {
       const { contactNumber } = req.params;
@@ -261,46 +268,21 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Twilio webhook for incoming messages
-  app.post("/api/twilio/webhook", async (req, res) => {
+  // Verify WhatsApp Business Profile status
+  app.get("/api/twilio/status", async (_req, res) => {
     try {
-      const {
-        From,
-        To,
-        Body,
-        MessageSid,
-        ProfileName,
-        WaId // WhatsApp ID
-      } = req.body;
-
-      console.log(`Received WhatsApp message from ${From} (${ProfileName || 'Unknown'})`);
-
-      const message = await db
-        .insert(messages)
-        .values({
-          contactNumber: formatWhatsAppNumber(From.replace('whatsapp:', '')),
-          contactName: ProfileName || From.replace('whatsapp:', ''),
-          content: Body,
-          direction: "inbound",
-          status: "delivered",
-          twilioSid: MessageSid,
-          metadata: {
-            channel: 'whatsapp',
-            profile: {
-              name: ProfileName
-            }
-          },
-        })
-        .returning();
-
-      console.log(`Stored incoming message with ID: ${message[0].id}`);
-      broadcast({ type: "message_created", message: message[0] });
-      res.status(200).send();
-    } catch (error) {
-      console.error("Error processing webhook:", error);
-      res.status(500).send("Internal server error");
+      // This function is not needed anymore because the WhatsApp profile is verified implicitly during webhook validation
+      res.json({status: "ok"});
+    } catch (error: any) {
+      console.error("WhatsApp Business API connection error:", error);
+      res.status(500).json({
+        status: 'error',
+        message: error.message,
+        code: error.code || 'WHATSAPP_CONFIGURATION_ERROR'
+      });
     }
   });
+
 
   return httpServer;
 }
