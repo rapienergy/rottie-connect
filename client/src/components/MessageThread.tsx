@@ -53,6 +53,8 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     });
   };
 
+  const isFromMainNumber = (number: string) => number.endsWith('6311');
+
   return (
     <div className="h-full flex flex-col bg-black rounded-lg border border-zinc-800">
       <div className="p-4 border-b border-zinc-800">
@@ -71,20 +73,23 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
           </div>
         ) : (
           <div className="space-y-2">
-            {messages?.map((message) => (
-              <div
-                key={message.id}
-                className={cn(
-                  "text-sm whitespace-pre-wrap font-mono",
-                  message.direction === "outbound" 
-                    ? "text-green-400" 
-                    : "text-red-400"
-                )}
-              >
-                {`${formatMessageTime(message.createdAt)} [${message.direction}] ${message.content}`}
-                <span className="text-zinc-500"> :: ${message.status}</span>
-              </div>
-            ))}
+            {messages?.map((message) => {
+              const fromNumber = message.direction === 'inbound' ? message.contactNumber : contactNumber;
+              const isMain = isFromMainNumber(fromNumber);
+
+              return (
+                <div
+                  key={message.id}
+                  className={cn(
+                    "text-sm whitespace-pre-wrap font-mono",
+                    isMain ? "text-red-400" : "text-green-400"
+                  )}
+                >
+                  {`${formatMessageTime(message.createdAt)} [${message.direction}] ${message.content}`}
+                  <span className="text-zinc-500"> :: ${message.status}</span>
+                </div>
+              );
+            })}
             <div ref={messagesEndRef} />
           </div>
         )}
