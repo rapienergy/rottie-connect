@@ -14,13 +14,12 @@ export function connectWebSocket() {
 
     switch (data.type) {
       case "message_created":
-        // Invalidate both the conversation list and specific thread
-        queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
-        if (data.contactNumber) {
-          queryClient.invalidateQueries({ 
-            queryKey: [`/api/conversations/${data.contactNumber}/messages`] 
-          });
-        }
+        queryClient.invalidateQueries({
+          queryKey: [`/api/messages/${data.message.contactId}`],
+        });
+        break;
+      case "contact_created":
+        queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
         break;
     }
   };
@@ -31,7 +30,7 @@ export function connectWebSocket() {
     reconnectTimeout = window.setTimeout(connectWebSocket, 5000);
   };
 
-  // Keep connection alive with ping every 30 seconds
+  // Keep connection alive
   setInterval(() => {
     if (socket?.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: "ping" }));
