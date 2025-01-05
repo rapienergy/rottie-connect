@@ -15,6 +15,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
   const sendMessage = useSendMessage();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const systemNumber = process.env.TWILIO_PHONE_NUMBER || '';
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -53,6 +54,14 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     });
   };
 
+  // Helper to determine if a message is from the system
+  const isSystemMessage = (message: any) => {
+    const formattedSystem = `whatsapp:${systemNumber}`;
+    return message.direction === "outbound" || 
+           (message.metadata?.from === formattedSystem) ||
+           (message.metadata?.to === message.contactNumber);
+  };
+
   return (
     <div className="h-full flex flex-col bg-black rounded-lg border border-zinc-800">
       <div className="p-4 border-b border-zinc-800">
@@ -71,20 +80,23 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
           </div>
         ) : (
           <div className="space-y-2">
-            {messages?.map((message) => (
-              <div
-                key={message.id}
-                className={cn(
-                  "text-sm whitespace-pre-wrap font-mono p-1 rounded",
-                  message.direction === "inbound" 
-                    ? "bg-green-900/50 text-green-400" 
-                    : "bg-red-900/50 text-red-400"
-                )}
-              >
-                {`${formatMessageTime(message.createdAt)} [${message.direction}] ${message.content}`}
-                <span className="text-zinc-500"> :: {message.status}</span>
-              </div>
-            ))}
+            {messages?.map((message) => {
+              const isSystem = isSystemMessage(message);
+              return (
+                <div
+                  key={message.id}
+                  className={cn(
+                    "text-sm whitespace-pre-wrap font-mono p-1 rounded",
+                    isSystem
+                      ? "bg-red-900/50 text-red-400"
+                      : "bg-green-900/50 text-green-400"
+                  )}
+                >
+                  {`${formatMessageTime(message.createdAt)} [${isSystem ? 'outbound' : 'inbound'}] ${message.content}`}
+                  <span className="text-zinc-500"> :: {message.status}</span>
+                </div>
+              );
+            })}
             <div ref={messagesEndRef} />
           </div>
         )}
