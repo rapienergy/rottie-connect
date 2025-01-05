@@ -14,16 +14,6 @@ for (const envVar of requiredEnvVars) {
   }
 }
 
-// Format phone number for WhatsApp Business API
-function formatWhatsAppNumber(phoneNumber: string): string {
-  // Remove any non-digit characters except plus sign
-  const cleaned = phoneNumber.replace(/[^\d+]/g, '');
-  // Ensure there's exactly one plus sign at the start
-  const formatted = cleaned.startsWith('+') ? cleaned : `+${cleaned}`;
-  // Always prefix with whatsapp: as required by Twilio WhatsApp Business API
-  return `whatsapp:${formatted}`;
-}
-
 // Initialize Twilio client with error handling
 let twilioClient;
 try {
@@ -58,34 +48,22 @@ export function registerRoutes(app: Express): Server {
   // Verify WhatsApp Business Profile and Configuration
   app.get("/api/twilio/status", async (_req, res) => {
     try {
-      // Verify account and WhatsApp Business profile
+      // Verify account and WhatsApp capabilities
       const account = await twilioClient.api.accounts(process.env.TWILIO_ACCOUNT_SID!).fetch();
 
-      // Get WhatsApp-enabled phone numbers
+      // Check if the number exists and get its capabilities
       const phoneNumbers = await twilioClient.incomingPhoneNumbers.list();
       const whatsappNumber = phoneNumbers.find(n => n.phoneNumber === process.env.TWILIO_PHONE_NUMBER);
 
       if (!whatsappNumber) {
-        throw new Error('WhatsApp Business number not found in your Twilio account');
+        throw new Error('The specified phone number was not found in your Twilio account');
       }
-
-      // Get messaging services to verify WhatsApp capability
-      const messagingServices = await twilioClient.messaging.v1.services.list();
-      const whatsappService = messagingServices.find(s => 
-        s.inboundRequestUrl?.includes('whatsapp') || 
-        s.fallbackUrl?.includes('whatsapp')
-      );
 
       res.json({
         status: 'connected',
         friendlyName: account.friendlyName,
-        type: account.type,
-        whatsappEnabled: !!whatsappService,
-        number: {
-          phoneNumber: whatsappNumber.phoneNumber,
-          friendlyName: whatsappNumber.friendlyName,
-          capabilities: whatsappNumber.capabilities
-        }
+        whatsappNumber: process.env.TWILIO_PHONE_NUMBER,
+        capabilities: whatsappNumber.capabilities
       });
     } catch (error: any) {
       console.error("Error verifying WhatsApp configuration:", error);
@@ -102,21 +80,16 @@ export function registerRoutes(app: Express): Server {
     try {
       const { contactNumber, content } = req.body;
 
-      // Format numbers for WhatsApp Business API
-      const fromNumber = formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER!);
-      const toNumber = formatWhatsAppNumber(contactNumber);
+      // Format WhatsApp numbers
+      const fromNumber = `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`;
+      const toNumber = `whatsapp:${contactNumber}`;
 
-      console.log('Sending WhatsApp message:');
+      console.log('Attempting to send WhatsApp message:');
       console.log('From:', fromNumber);
       console.log('To:', toNumber);
       console.log('Content:', content);
 
-      // Validate WhatsApp number format
-      if (!fromNumber.startsWith('whatsapp:+') || !toNumber.startsWith('whatsapp:+')) {
-        throw new Error('Invalid WhatsApp number format. Numbers must include international format with whatsapp: prefix');
-      }
-
-      // Send message via Twilio WhatsApp Business API
+      // Send message via Twilio WhatsApp API
       const twilioMessage = await twilioClient.messages.create({
         from: fromNumber,
         to: toNumber,
@@ -129,7 +102,7 @@ export function registerRoutes(app: Express): Server {
       const message = await db
         .insert(messages)
         .values({
-          contactNumber: toNumber.replace('whatsapp:', ''),
+          contactNumber: contactNumber,
           content,
           direction: "outbound",
           status: twilioMessage.status,
@@ -146,13 +119,13 @@ export function registerRoutes(app: Express): Server {
       console.error("Error sending WhatsApp message:", error);
       res.status(500).json({
         message: "Failed to send message",
-        error: error.message,
+        error: error.message || 'Unknown error occurred',
         code: error.code
       });
     }
   });
 
-  // Get all WhatsApp messages from Twilio
+  // Get all conversations
   app.get("/api/conversations", async (_req, res) => {
     try {
       console.log('Fetching WhatsApp messages from Twilio...');
@@ -161,78 +134,77 @@ export function registerRoutes(app: Express): Server {
         limit: 50
       });
 
-      console.log(`Found ${twilioMessages.length} messages in Twilio`);
+      console.log(`Found ${twilioMessages.length} messages`);
 
-      const whatsappMessages = twilioMessages
+      const conversations = twilioMessages
         .filter(msg => msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:'))
-        .map(msg => ({
-          contactNumber: formatWhatsAppNumber((msg.to?.startsWith('whatsapp:') ? msg.from : msg.to)?.replace('whatsapp:', '') || ''),
-          content: msg.body || '',
-          direction: msg.direction,
-          status: msg.status,
-          twilioSid: msg.sid,
-          metadata: {
-            channel: 'whatsapp',
-            profile: {
-              name: msg.to?.replace('whatsapp:', '')
-            }
-          },
-          createdAt: msg.dateCreated
-        }));
+        .reduce((acc: any, msg: any) => {
+          const contactNumber = (msg.to?.startsWith('whatsapp:') ? msg.from : msg.to)?.replace('whatsapp:', '');
 
-      // Group messages by contact number
-      const conversations = whatsappMessages.reduce((acc, message) => {
-        if (!acc[message.contactNumber]) {
-          acc[message.contactNumber] = {
-            contactNumber: message.contactNumber,
-            latestMessage: message,
-            channel: 'whatsapp'
-          };
-        } else if (new Date(message.createdAt) > new Date(acc[message.contactNumber].latestMessage.createdAt)) {
-          acc[message.contactNumber].latestMessage = message;
-        }
-        return acc;
-      }, {} as Record<string, any>);
+          if (!acc[contactNumber]) {
+            acc[contactNumber] = {
+              contactNumber,
+              latestMessage: {
+                content: msg.body,
+                direction: msg.direction,
+                status: msg.status,
+                createdAt: msg.dateCreated
+              },
+              channel: 'whatsapp'
+            };
+          } else if (new Date(msg.dateCreated) > new Date(acc[contactNumber].latestMessage.createdAt)) {
+            acc[contactNumber].latestMessage = {
+              content: msg.body,
+              direction: msg.direction,
+              status: msg.status,
+              createdAt: msg.dateCreated
+            };
+          }
+          return acc;
+        }, {});
 
       res.json(Object.values(conversations));
-    } catch (error) {
-      console.error("Error fetching Twilio messages:", error);
-      res.status(500).json({ message: "Failed to fetch conversations" });
+    } catch (error: any) {
+      console.error("Error fetching conversations:", error);
+      res.status(500).json({ 
+        message: "Failed to fetch conversations",
+        error: error.message
+      });
     }
   });
 
   // Get messages for a specific conversation
   app.get("/api/conversations/:contactNumber/messages", async (req, res) => {
     try {
-      const formattedNumber = formatWhatsAppNumber(req.params.contactNumber);
+      const { contactNumber } = req.params;
       const twilioMessages = await twilioClient.messages.list({
         limit: 50,
-        to: formattedNumber,
-        from: formattedNumber
+        to: `whatsapp:${contactNumber}`,
+        from: `whatsapp:${contactNumber}`
       });
 
       const messages = twilioMessages
         .filter(msg => msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:'))
         .map(msg => ({
           id: msg.sid,
-          contactNumber: formatWhatsAppNumber((msg.to?.startsWith('whatsapp:') ? msg.from : msg.to)?.replace('whatsapp:', '') || ''),
+          contactNumber: (msg.to?.startsWith('whatsapp:') ? msg.from : msg.to)?.replace('whatsapp:', ''),
           content: msg.body || '',
           direction: msg.direction,
           status: msg.status,
           twilioSid: msg.sid,
           metadata: {
-            channel: 'whatsapp',
-            profile: {
-              name: msg.to?.replace('whatsapp:', '')
-            }
+            channel: 'whatsapp'
           },
           createdAt: msg.dateCreated
         }));
 
       res.json(messages);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching messages:", error);
-      res.status(500).json({ message: "Failed to fetch messages" });
+      res.status(500).json({ 
+        message: "Failed to fetch messages",
+        error: error.message
+      });
     }
   });
 
@@ -278,4 +250,13 @@ export function registerRoutes(app: Express): Server {
   });
 
   return httpServer;
+}
+
+function formatWhatsAppNumber(phoneNumber: string): string {
+  // Remove any non-digit characters except plus sign
+  const cleaned = phoneNumber.replace(/[^\d+]/g, '');
+  // Ensure there's exactly one plus sign at the start
+  const formatted = cleaned.startsWith('+') ? cleaned : `+${cleaned}`;
+  // Always prefix with whatsapp: as required by Twilio WhatsApp Business API
+  return `whatsapp:${formatted}`;
 }
