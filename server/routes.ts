@@ -22,7 +22,7 @@ function formatWhatsAppNumber(number: string, isBusinessNumber = false): string 
   const formatted = cleaned.replace(/\++/g, '+').replace(/^\+?/, '+');
 
   // For sending messages, we need the full whatsapp: prefix
-  return isBusinessNumber ? `whatsapp:${formatted}` : formatted;
+  return isBusinessNumber ? `whatsapp:${formatted}` : `whatsapp:${formatted}`;
 }
 
 // Initialize Twilio client with error handling
@@ -140,7 +140,7 @@ export function registerRoutes(app: Express): Server {
       const message = await db
         .insert(messages)
         .values({
-          contactNumber: formattedToNumber,
+          contactNumber: formattedToNumber.replace('whatsapp:', ''),
           content,
           direction: "outbound",
           status: twilioMessage.status,
@@ -169,8 +169,8 @@ export function registerRoutes(app: Express): Server {
       const formattedNumber = formatWhatsAppNumber(req.params.contactNumber);
       const twilioMessages = await twilioClient.messages.list({
         limit: 50,
-        to: `whatsapp:${formattedNumber}`,
-        from: `whatsapp:${formattedNumber}`
+        to: formattedNumber,
+        from: formattedNumber
       });
 
       const messages = twilioMessages
