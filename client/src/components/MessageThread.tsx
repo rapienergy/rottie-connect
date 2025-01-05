@@ -14,9 +14,14 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
   const { data: messages, isLoading: messagesLoading } = useMessages(contactNumber);
   const sendMessage = useSendMessage();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
+  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const scrollToBottom = () => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+    scrollToBottom();
   }, [messages]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -26,12 +31,25 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
 
     if (!content.trim()) return;
 
-    await sendMessage.mutateAsync({ 
-      contactNumber, 
-      content,
-      channel: messages?.[0]?.metadata?.channel || 'whatsapp' // Use same channel as conversation
+    try {
+      await sendMessage.mutateAsync({ 
+        contactNumber,
+        content,
+        channel: 'whatsapp'
+      });
+      form.reset();
+      inputRef.current?.focus();
+    } catch (error) {
+      console.error('Failed to send message:', error);
+    }
+  };
+
+  const formatMessageTime = (dateStr: string) => {
+    return new Date(dateStr).toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
     });
-    form.reset();
   };
 
   return (
@@ -40,12 +58,10 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
         <h2 className="font-mono text-white">
           {messages?.[0]?.contactName || contactNumber}
         </h2>
-        <p className="font-mono text-sm text-zinc-400">
-          Channel: {messages?.[0]?.metadata?.channel || 'whatsapp'}
-        </p>
+        <p className="font-mono text-sm text-zinc-400">WhatsApp Business</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-2 font-mono bg-black">
+      <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {messagesLoading ? (
           <div className="space-y-4">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -53,38 +69,42 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
             ))}
           </div>
         ) : (
-          messages?.map((message) => {
-            const time = new Date(message.createdAt).toLocaleTimeString('en-US', {
-              hour: 'numeric',
-              minute: '2-digit',
-              second: '2-digit',
-              hour12: true
-            });
-
-            return (
+          <div className="space-y-3">
+            {messages?.map((message) => (
               <div
                 key={message.id}
                 className={cn(
-                  "font-mono text-sm",
-                  message.direction === "outbound" ? "text-green-400" : "text-white"
+                  "p-3 rounded-lg max-w-[80%]",
+                  message.direction === "outbound" 
+                    ? "ml-auto bg-green-900/30 text-green-400" 
+                    : "bg-zinc-800 text-white"
                 )}
               >
-                {`${time} [${message.metadata?.channel || 'whatsapp'}] ${message.content} :: ${message.status}`}
+                <div className="text-sm break-words">{message.content}</div>
+                <div className="text-xs mt-1 opacity-60">
+                  {formatMessageTime(message.createdAt)} · {message.status}
+                </div>
               </div>
-            );
-          })
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
         )}
-        <div ref={messagesEndRef} />
       </div>
 
       <form onSubmit={handleSubmit} className="p-4 border-t border-zinc-800 flex gap-2">
         <Input
+          ref={inputRef}
           name="content"
           placeholder="Type your message..."
           autoComplete="off"
           className="bg-zinc-900 border-zinc-700 text-white font-mono"
         />
-        <Button type="submit" size="icon" className="bg-zinc-800 hover:bg-zinc-700">
+        <Button 
+          type="submit" 
+          size="icon" 
+          className="bg-green-900 hover:bg-green-800"
+          disabled={sendMessage.isPending}
+        >
           <Send className="h-4 w-4" />
         </Button>
       </form>
