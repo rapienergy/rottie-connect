@@ -20,6 +20,12 @@ export interface Message {
   createdAt: string;
 }
 
+export interface SendMessageParams {
+  contactNumber: string;
+  content: string;
+  channel?: 'whatsapp' | 'sms' | 'voice';
+}
+
 export interface Conversation {
   contactNumber: string;
   contactName?: string;
@@ -40,17 +46,11 @@ export function useMessages(contactNumber: string) {
 
 export function useSendMessage() {
   return useMutation({
-    mutationFn: async ({
-      contactNumber,
-      content,
-    }: {
-      contactNumber: string;
-      content: string;
-    }) => {
+    mutationFn: async (params: SendMessageParams) => {
       const res = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contactNumber, content }),
+        body: JSON.stringify(params),
       });
       if (!res.ok) throw new Error(await res.text());
       return res.json();

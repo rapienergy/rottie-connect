@@ -5,30 +5,26 @@ import { db } from "@db";
 import { messages } from "@db/schema";
 import { eq, desc } from "drizzle-orm";
 import twilio from "twilio";
+import type { Twilio } from "twilio";
 
-// Validate required Twilio environment variables
-const requiredEnvVars = ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER'];
-for (const envVar of requiredEnvVars) {
-  if (!process.env[envVar]) {
-    throw new Error(`${envVar} environment variable is required`);
-  }
-}
-
-// Initialize Twilio client
-let twilioClient;
+// Initialize Twilio client with error handling
+let twilioClient: Twilio | null = null;
 try {
-  twilioClient = twilio(
-    process.env.TWILIO_ACCOUNT_SID!,
-    process.env.TWILIO_AUTH_TOKEN!
-  );
-  console.log('Twilio client initialized successfully');
+  if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) {
+    console.error('Missing required Twilio credentials');
+  } else {
+    twilioClient = twilio(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN
+    );
+    console.log('Twilio client initialized successfully');
+  }
 } catch (error) {
   console.error('Failed to initialize Twilio client:', error);
-  throw error;
 }
 
-// Format number for WhatsApp Business API
-function formatWhatsAppNumber(phoneNumber: string): string {
+// Format number for various channels
+function formatPhoneNumber(phoneNumber: string, channel: 'whatsapp' | 'sms' | 'voice'): string {
   if (!phoneNumber) return '';
 
   // Remove all non-digit characters except plus sign
@@ -44,8 +40,8 @@ function formatWhatsAppNumber(phoneNumber: string): string {
     }
   }
 
-  // Add whatsapp: prefix for Business API
-  return `whatsapp:${cleaned}`;
+  // Add whatsapp: prefix only for WhatsApp channel
+  return channel === 'whatsapp' ? `whatsapp:${cleaned}` : cleaned;
 }
 
 export function registerRoutes(app: Express): Server {
@@ -66,30 +62,117 @@ export function registerRoutes(app: Express): Server {
     });
   };
 
-  // Send WhatsApp message
+  // Webhook handler for all channels
+  app.post("/webhook", async (req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      console.log('Received webhook request');
+      console.log('Headers:', JSON.stringify(req.headers, null, 2));
+      console.log('Body:', JSON.stringify(req.body, null, 2));
+
+      // Validate Twilio signature
+      const twilioSignature = req.headers['x-twilio-signature'];
+      const webhookUrl = `https://rapienergy.live/webhook`;
+
+      if (!twilioSignature || !process.env.TWILIO_AUTH_TOKEN) {
+        console.error('Missing Twilio signature or auth token');
+        return res.status(403).send('Forbidden: Missing signature or auth token');
+      }
+
+      const isValid = twilio.validateRequest(
+        process.env.TWILIO_AUTH_TOKEN,
+        twilioSignature as string,
+        webhookUrl,
+        req.body
+      );
+
+      if (!isValid) {
+        console.error('Invalid Twilio signature');
+        return res.status(403).send('Forbidden: Invalid signature');
+      }
+
+      // Extract message details
+      const {
+        From,
+        To,
+        Body,
+        MessageSid,
+        ProfileName,
+      } = req.body;
+
+      // Determine channel type
+      const isWhatsApp = From?.startsWith('whatsapp:') || To?.startsWith('whatsapp:');
+      const channel = isWhatsApp ? 'whatsapp' : 'sms';
+      const contactNumber = isWhatsApp ? From.replace('whatsapp:', '') : From;
+
+      console.log(`Received ${channel} message from ${From}`);
+      console.log('Message details:', { From, To, Body, MessageSid });
+
+      // Store message in database
+      const message = await db
+        .insert(messages)
+        .values({
+          contactNumber,
+          contactName: ProfileName || undefined,
+          content: Body,
+          direction: "inbound",
+          status: "delivered",
+          twilioSid: MessageSid,
+          metadata: {
+            channel,
+            profile: {
+              name: ProfileName
+            }
+          },
+        })
+        .returning();
+
+      // Notify connected clients
+      broadcast({ type: "message_created", message: message[0] });
+
+      // Return TwiML response
+      res.type('text/xml').send(`
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Response></Response>
+      `);
+    } catch (error: any) {
+      console.error("Error processing webhook:", error);
+      res.status(500).send("Internal server error");
+    }
+  });
+
+  // Send message using Messaging Service (supports SMS, WhatsApp, etc.)
   app.post("/api/messages", async (req, res) => {
     try {
-      const { contactNumber, content } = req.body;
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      const { contactNumber, content, channel = 'whatsapp' } = req.body;
 
       if (!contactNumber || !content) {
         throw new Error('Contact number and content are required');
       }
 
-      // Format the numbers for WhatsApp Business API
-      const fromNumber = formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER!);
-      const toNumber = formatWhatsAppNumber(contactNumber);
+      // Format the destination number based on channel
+      const toNumber = formatPhoneNumber(contactNumber, channel);
 
-      console.log('Sending WhatsApp message:');
-      console.log('From:', fromNumber);
+      console.log('Sending message via Messaging Service:');
+      console.log('Channel:', channel);
       console.log('To:', toNumber);
       console.log('Content:', content);
 
-      // Send message via Twilio WhatsApp Business API
-      const twilioMessage = await twilioClient.messages.create({
-        from: fromNumber,
+      // Send message via Twilio Messaging Service
+      const messagingOptions = {
+        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
         to: toNumber,
         body: content
-      });
+      };
+
+      const twilioMessage = await twilioClient.messages.create(messagingOptions);
 
       console.log('Message sent successfully:', twilioMessage.sid);
 
@@ -97,13 +180,13 @@ export function registerRoutes(app: Express): Server {
       const message = await db
         .insert(messages)
         .values({
-          contactNumber: contactNumber,
+          contactNumber,
           content,
           direction: "outbound",
           status: twilioMessage.status,
           twilioSid: twilioMessage.sid,
           metadata: {
-            channel: 'whatsapp'
+            channel
           },
         })
         .returning();
@@ -111,20 +194,22 @@ export function registerRoutes(app: Express): Server {
       broadcast({ type: "message_created", message: message[0] });
       res.json(message[0]);
     } catch (error: any) {
-      console.error("Error sending WhatsApp message:", error);
+      console.error("Error sending message:", error);
       res.status(500).json({
         message: "Failed to send message",
         error: error.message,
-        code: error.code || 'UNKNOWN_ERROR',
-        details: error.details || undefined
+        code: error.code || 'UNKNOWN_ERROR'
       });
     }
   });
 
-  // Get all conversations
+  // Get all conversations across channels
   app.get("/api/conversations", async (_req, res) => {
     try {
-      console.log('Fetching WhatsApp messages from Twilio...');
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+      console.log('Fetching messages from Twilio...');
 
       const twilioMessages = await twilioClient.messages.list({
         limit: 50
@@ -132,32 +217,34 @@ export function registerRoutes(app: Express): Server {
 
       console.log(`Found ${twilioMessages.length} messages`);
 
-      const conversations = twilioMessages
-        .filter(msg => msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:'))
-        .reduce((acc: any, msg: any) => {
-          const contactNumber = (msg.to?.startsWith('whatsapp:') ? msg.from : msg.to)?.replace('whatsapp:', '');
+      const conversations = twilioMessages.reduce((acc: any, msg: any) => {
+        const isWhatsApp = msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:');
+        const channel = isWhatsApp ? 'whatsapp' : 'sms';
+        const contactNumber = (isWhatsApp ? 
+          (msg.to?.startsWith('whatsapp:') ? msg.from : msg.to)?.replace('whatsapp:', '') :
+          (msg.direction === 'inbound' ? msg.from : msg.to));
 
-          if (!acc[contactNumber]) {
-            acc[contactNumber] = {
-              contactNumber,
-              latestMessage: {
-                content: msg.body,
-                direction: msg.direction,
-                status: msg.status,
-                createdAt: msg.dateCreated
-              },
-              channel: 'whatsapp'
-            };
-          } else if (new Date(msg.dateCreated) > new Date(acc[contactNumber].latestMessage.createdAt)) {
-            acc[contactNumber].latestMessage = {
+        if (!acc[contactNumber]) {
+          acc[contactNumber] = {
+            contactNumber,
+            latestMessage: {
               content: msg.body,
               direction: msg.direction,
               status: msg.status,
               createdAt: msg.dateCreated
-            };
-          }
-          return acc;
-        }, {});
+            },
+            channel
+          };
+        } else if (new Date(msg.dateCreated) > new Date(acc[contactNumber].latestMessage.createdAt)) {
+          acc[contactNumber].latestMessage = {
+            content: msg.body,
+            direction: msg.direction,
+            status: msg.status,
+            createdAt: msg.dateCreated
+          };
+        }
+        return acc;
+      }, {});
 
       res.json(Object.values(conversations));
     } catch (error: any) {
@@ -169,103 +256,40 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // WhatsApp Business API webhook
-  app.post("/whatsapp/webhook", async (req, res) => {
-    try {
-      console.log('Received webhook request from:', req.ip);
-      console.log('Headers:', JSON.stringify(req.headers, null, 2));
-      console.log('Body:', JSON.stringify(req.body, null, 2));
-
-      // Validate that the request is coming from Twilio
-      const twilioSignature = req.headers['x-twilio-signature'];
-      const url = `https://rapienergy.live/whatsapp/webhook`; // Production URL
-      const params = req.body;
-
-      if (!twilioSignature) {
-        console.error('Missing Twilio signature');
-        return res.status(403).send('Forbidden: Missing signature');
-      }
-
-      const requestIsValid = twilio.validateRequest(
-        process.env.TWILIO_AUTH_TOKEN!,
-        twilioSignature as string,
-        url,
-        params
-      );
-
-      if (!requestIsValid) {
-        console.error('Invalid Twilio signature');
-        return res.status(403).send('Forbidden: Invalid signature');
-      }
-
-      const {
-        From,
-        To,
-        Body,
-        MessageSid,
-        ProfileName,
-        WaId // WhatsApp ID
-      } = req.body;
-
-      console.log(`Received WhatsApp message from ${From} (${ProfileName || 'Unknown'})`);
-
-      // Store message in database
-      const message = await db
-        .insert(messages)
-        .values({
-          contactNumber: From.replace('whatsapp:', ''),
-          contactName: ProfileName || undefined,
-          content: Body,
-          direction: "inbound",
-          status: "delivered",
-          twilioSid: MessageSid,
-          metadata: {
-            channel: 'whatsapp',
-            profile: {
-              name: ProfileName
-            }
-          },
-        })
-        .returning();
-
-      console.log(`Stored incoming message with ID: ${message[0].id}`);
-      broadcast({ type: "message_created", message: message[0] });
-
-      // Send a TwiML response without auto-reply message
-      res.type('text/xml').send(`
-        <?xml version="1.0" encoding="UTF-8"?>
-        <Response></Response>
-      `);
-    } catch (error) {
-      console.error("Error processing webhook:", error);
-      res.status(500).send("Internal server error");
-    }
-  });
-
   // Get messages for a specific conversation
   app.get("/api/conversations/:contactNumber/messages", async (req, res) => {
     try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
       const { contactNumber } = req.params;
+
+      // Fetch both WhatsApp and SMS messages
+      const [whatsappTo, whatsappFrom] = [`whatsapp:${contactNumber}`, `whatsapp:${contactNumber}`];
       const twilioMessages = await twilioClient.messages.list({
-        limit: 50,
-        to: `whatsapp:${contactNumber}`,
-        from: `whatsapp:${contactNumber}`
+        to: [contactNumber, whatsappTo],
+        from: [contactNumber, whatsappFrom],
+        limit: 50
       });
 
-      const messages = twilioMessages
-        .filter(msg => msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:'))
-        .map(msg => ({
+      const messages = twilioMessages.map(msg => {
+        const isWhatsApp = msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:');
+        return {
           id: msg.sid,
-          contactNumber: (msg.to?.startsWith('whatsapp:') ? msg.from : msg.to)?.replace('whatsapp:', ''),
+          contactNumber: isWhatsApp ? 
+            (msg.to?.startsWith('whatsapp:') ? msg.from : msg.to)?.replace('whatsapp:', '') :
+            (msg.direction === 'inbound' ? msg.from : msg.to),
           content: msg.body || '',
           direction: msg.direction,
           status: msg.status,
           twilioSid: msg.sid,
           metadata: {
-            channel: 'whatsapp'
+            channel: isWhatsApp ? 'whatsapp' : 'sms'
           },
           createdAt: msg.dateCreated
-        }));
+        };
+      });
 
       res.json(messages);
     } catch (error: any) {
@@ -277,21 +301,31 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Verify WhatsApp Business Profile status
+  // Verify Messaging Service status
   app.get("/api/twilio/status", async (_req, res) => {
     try {
-      // Simple connection test for WhatsApp Business API
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      // Get Messaging Service details
+      const service = await twilioClient.messaging.v1.services(
+        process.env.TWILIO_MESSAGING_SERVICE_SID || ''
+      ).fetch();
+
       res.json({
         status: "connected",
-        channel: "whatsapp",
-        mode: "business_api"
+        friendlyName: service.friendlyName,
+        inboundRequestUrl: service.inboundRequestUrl,
+        useInboundWebhookOnNumber: service.useInboundWebhookOnNumber,
+        channels: ['sms', 'whatsapp', 'voice']
       });
     } catch (error: any) {
-      console.error("WhatsApp Business API connection error:", error);
+      console.error("Messaging Service connection error:", error);
       res.status(500).json({
         status: 'error',
         message: error.message,
-        code: error.code || 'WHATSAPP_API_ERROR'
+        code: error.code || 'MESSAGING_SERVICE_ERROR'
       });
     }
   });

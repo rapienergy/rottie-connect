@@ -26,7 +26,11 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
 
     if (!content.trim()) return;
 
-    await sendMessage.mutateAsync({ contactNumber, content });
+    await sendMessage.mutateAsync({ 
+      contactNumber, 
+      content,
+      channel: messages?.[0]?.metadata?.channel || 'whatsapp' // Use same channel as conversation
+    });
     form.reset();
   };
 
@@ -65,7 +69,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
                   message.direction === "outbound" ? "text-green-400" : "text-white"
                 )}
               >
-                {`${time} [${message.direction}] ${message.content} :: ${message.status}`}
+                {`${time} [${message.metadata?.channel || 'whatsapp'}] ${message.content} :: ${message.status}`}
               </div>
             );
           })
