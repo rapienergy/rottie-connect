@@ -29,21 +29,6 @@ try {
     process.env.TWILIO_ACCOUNT_SID!,
     process.env.TWILIO_AUTH_TOKEN!
   );
-
-  // Send a test message to verify WhatsApp sandbox connection
-  const whatsappNumber = formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER!);
-  console.log('Using WhatsApp number:', whatsappNumber);
-
-  twilioClient.messages.create({
-    body: "WhatsApp Sandbox Connection Test",
-    from: `whatsapp:${whatsappNumber}`,
-    to: `whatsapp:${whatsappNumber}`,
-  }).then(message => {
-    console.log('WhatsApp test message sent successfully:', message.sid);
-  }).catch(error => {
-    console.error('WhatsApp test message error:', error);
-  });
-
   console.log('Twilio client initialized successfully');
 } catch (error) {
   console.error('Failed to initialize Twilio client:', error);
@@ -236,9 +221,7 @@ export function registerRoutes(app: Express): Server {
           metadata: {
             channel: 'whatsapp',
             profile: {
-              name: ProfileName,
-              // Store WhatsApp-specific information
-              whatsappId: WaId
+              name: ProfileName
             }
           },
         })
