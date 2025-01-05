@@ -27,6 +27,28 @@ try {
   throw error;
 }
 
+// Format number for WhatsApp Business API
+function formatWhatsAppNumber(phoneNumber: string, isFromNumber = false): string {
+  // Remove all non-digit characters except plus sign
+  let cleaned = phoneNumber.replace(/[^\d+]/g, '');
+
+  // Ensure number starts with + and country code
+  if (!cleaned.startsWith('+')) {
+    cleaned = '+' + cleaned;
+  }
+
+  // For 10-digit US numbers, add +1
+  if (cleaned.length === 10) {
+    cleaned = '+1' + cleaned;
+  }
+
+  // Remove any spaces and format consistently
+  cleaned = cleaned.replace(/\s+/g, '');
+
+  // Add whatsapp: prefix for API calls
+  return `whatsapp:${cleaned}`;
+}
+
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
   const wss = new WebSocketServer({ 
@@ -80,9 +102,13 @@ export function registerRoutes(app: Express): Server {
     try {
       const { contactNumber, content } = req.body;
 
-      // Format WhatsApp numbers
-      const fromNumber = `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`;
-      const toNumber = `whatsapp:${contactNumber}`;
+      if (!contactNumber || !content) {
+        throw new Error('Contact number and content are required');
+      }
+
+      // Format the WhatsApp numbers
+      const fromNumber = formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER!, true);
+      const toNumber = formatWhatsAppNumber(contactNumber);
 
       console.log('Attempting to send WhatsApp message:');
       console.log('From:', fromNumber);
@@ -119,8 +145,9 @@ export function registerRoutes(app: Express): Server {
       console.error("Error sending WhatsApp message:", error);
       res.status(500).json({
         message: "Failed to send message",
-        error: error.message || 'Unknown error occurred',
-        code: error.code
+        error: error.message,
+        code: error.code || 'UNKNOWN_ERROR',
+        details: error.details || undefined
       });
     }
   });
@@ -250,13 +277,4 @@ export function registerRoutes(app: Express): Server {
   });
 
   return httpServer;
-}
-
-function formatWhatsAppNumber(phoneNumber: string): string {
-  // Remove any non-digit characters except plus sign
-  const cleaned = phoneNumber.replace(/[^\d+]/g, '');
-  // Ensure there's exactly one plus sign at the start
-  const formatted = cleaned.startsWith('+') ? cleaned : `+${cleaned}`;
-  // Always prefix with whatsapp: as required by Twilio WhatsApp Business API
-  return `whatsapp:${formatted}`;
 }
