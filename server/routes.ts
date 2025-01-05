@@ -172,10 +172,19 @@ export function registerRoutes(app: Express): Server {
   // Twilio webhook for incoming messages
   app.post("/whatsapp/webhook", async (req, res) => {
     try {
+      console.log('Received webhook request from:', req.ip);
+      console.log('Headers:', JSON.stringify(req.headers, null, 2));
+      console.log('Body:', JSON.stringify(req.body, null, 2));
+
       // Validate that the request is coming from Twilio
       const twilioSignature = req.headers['x-twilio-signature'];
-      const url = `https://rapienergy.live/whatsapp/webhook`; // Use the production URL
+      const url = `https://rapienergy.live/whatsapp/webhook`; // Production URL
       const params = req.body;
+
+      if (!twilioSignature) {
+        console.error('Missing Twilio signature');
+        return res.status(403).send('Forbidden: Missing signature');
+      }
 
       const requestIsValid = twilio.validateRequest(
         process.env.TWILIO_AUTH_TOKEN!,
@@ -186,7 +195,7 @@ export function registerRoutes(app: Express): Server {
 
       if (!requestIsValid) {
         console.error('Invalid Twilio signature');
-        return res.status(403).send('Forbidden');
+        return res.status(403).send('Forbidden: Invalid signature');
       }
 
       const {
@@ -200,6 +209,7 @@ export function registerRoutes(app: Express): Server {
 
       console.log(`Received WhatsApp message from ${From} (${ProfileName || 'Unknown'})`);
 
+      // Store message in database
       const message = await db
         .insert(messages)
         .values({
@@ -221,19 +231,18 @@ export function registerRoutes(app: Express): Server {
       console.log(`Stored incoming message with ID: ${message[0].id}`);
       broadcast({ type: "message_created", message: message[0] });
 
-      // Send a TwiML response
+      // Send a TwiML response without auto-reply message
       res.type('text/xml').send(`
         <?xml version="1.0" encoding="UTF-8"?>
-        <Response>
-          <Message>Message received by RAPIENERGY WhatsApp Service</Message>
-        </Response>
+        <Response></Response>
       `);
     } catch (error) {
       console.error("Error processing webhook:", error);
       res.status(500).send("Internal server error");
     }
   });
-    // Get messages for a specific conversation
+
+  // Get messages for a specific conversation
   app.get("/api/conversations/:contactNumber/messages", async (req, res) => {
     try {
       const { contactNumber } = req.params;
