@@ -211,8 +211,9 @@ export function registerRoutes(app: Express): Server {
       }
       console.log('Fetching messages from Twilio...');
 
+      // Fetch more messages to ensure we have complete conversation history
       const twilioMessages = await twilioClient.messages.list({
-        limit: 50
+        limit: 100 // Increased limit to get more message history
       });
 
       console.log(`Found ${twilioMessages.length} messages`);
@@ -220,33 +221,58 @@ export function registerRoutes(app: Express): Server {
       const conversations = twilioMessages.reduce((acc: any, msg: any) => {
         const isWhatsApp = msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:');
         const channel = isWhatsApp ? 'whatsapp' : 'sms';
+
+        // Normalize the contact number by removing the whatsapp: prefix and ensuring consistent format
         const contactNumber = (isWhatsApp ? 
-          (msg.to?.startsWith('whatsapp:') ? msg.from : msg.to)?.replace('whatsapp:', '') :
-          (msg.direction === 'inbound' ? msg.from : msg.to));
+          (msg.direction === 'inbound' ? msg.from : msg.to)?.replace('whatsapp:', '') :
+          (msg.direction === 'inbound' ? msg.from : msg.to))?.replace(/^\+/, '');
 
         if (!acc[contactNumber]) {
           acc[contactNumber] = {
-            contactNumber,
+            contactNumber: `+${contactNumber}`,
+            contactName: msg.direction === 'inbound' ? msg.profileName : undefined,
+            messageCount: 1,
+            channels: new Set([channel]),
             latestMessage: {
+              id: msg.sid,
               content: msg.body,
               direction: msg.direction,
               status: msg.status,
-              createdAt: msg.dateCreated
-            },
-            channel
+              createdAt: msg.dateCreated,
+              channel
+            }
           };
-        } else if (new Date(msg.dateCreated) > new Date(acc[contactNumber].latestMessage.createdAt)) {
-          acc[contactNumber].latestMessage = {
-            content: msg.body,
-            direction: msg.direction,
-            status: msg.status,
-            createdAt: msg.dateCreated
-          };
+        } else {
+          acc[contactNumber].messageCount++;
+          acc[contactNumber].channels.add(channel);
+
+          // Update latest message if this one is more recent
+          if (new Date(msg.dateCreated) > new Date(acc[contactNumber].latestMessage.createdAt)) {
+            acc[contactNumber].latestMessage = {
+              id: msg.sid,
+              content: msg.body,
+              direction: msg.direction,
+              status: msg.status,
+              createdAt: msg.dateCreated,
+              channel
+            };
+          }
         }
         return acc;
       }, {});
 
-      res.json(Object.values(conversations));
+      // Convert Set to array before sending response
+      const formattedConversations = Object.values(conversations).map((conv: any) => ({
+        ...conv,
+        channels: Array.from(conv.channels)
+      }));
+
+      // Sort conversations by latest message date
+      const sortedConversations = formattedConversations.sort((a: any, b: any) => 
+        new Date(b.latestMessage.createdAt).getTime() - new Date(a.latestMessage.createdAt).getTime()
+      );
+
+      res.json(sortedConversations);
     } catch (error: any) {
       console.error("Error fetching conversations:", error);
       res.status(500).json({ 
@@ -264,34 +290,42 @@ export function registerRoutes(app: Express): Server {
       }
 
       const { contactNumber } = req.params;
+      console.log(`Fetching messages for contact: ${contactNumber}`);
 
-      // Fetch both WhatsApp and SMS messages
-      const [whatsappTo, whatsappFrom] = [`whatsapp:${contactNumber}`, `whatsapp:${contactNumber}`];
-      const twilioMessages = await twilioClient.messages.list({
-        to: [contactNumber, whatsappTo],
-        from: [contactNumber, whatsappFrom],
-        limit: 50
+      // Fetch both WhatsApp and SMS messages for the contact
+      const messages = await twilioClient.messages.list({
+        limit: 100, // Increased limit for more history
+        to: [contactNumber, `whatsapp:${contactNumber}`],
+        from: [contactNumber, `whatsapp:${contactNumber}`]
       });
 
-      const messages = twilioMessages.map(msg => {
+      const formattedMessages = messages.map(msg => {
         const isWhatsApp = msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:');
         return {
           id: msg.sid,
           contactNumber: isWhatsApp ? 
-            (msg.to?.startsWith('whatsapp:') ? msg.from : msg.to)?.replace('whatsapp:', '') :
+            (msg.direction === 'inbound' ? msg.from : msg.to)?.replace('whatsapp:', '') :
             (msg.direction === 'inbound' ? msg.from : msg.to),
           content: msg.body || '',
           direction: msg.direction,
           status: msg.status,
           twilioSid: msg.sid,
           metadata: {
-            channel: isWhatsApp ? 'whatsapp' : 'sms'
+            channel: isWhatsApp ? 'whatsapp' : 'sms',
+            profile: msg.direction === 'inbound' ? {
+              name: msg.profileName
+            } : undefined
           },
           createdAt: msg.dateCreated
         };
       });
 
-      res.json(messages);
+      // Sort messages by date
+      const sortedMessages = formattedMessages.sort((a, b) => 
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+
+      res.json(sortedMessages);
     } catch (error: any) {
       console.error("Error fetching messages:", error);
       res.status(500).json({ 
