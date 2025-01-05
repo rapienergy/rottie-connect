@@ -58,15 +58,6 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     return message.direction === "outbound";
   };
 
-  // Format message line based on direction and status
-  const formatMessageLine = (message: any, isOutbound: boolean) => {
-    const time = formatMessageTime(message.createdAt);
-    const sender = isOutbound ? '[Rottie]' : '[inbound]';
-    const content = message.content;
-    const status = message.status.toLowerCase();
-    return `${time} ${sender} ${content} :: ${status}`;
-  };
-
   // Sort messages by time
   const sortedMessages = messages?.slice().sort((a, b) => 
     new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
