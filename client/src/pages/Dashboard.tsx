@@ -13,6 +13,17 @@ export function Dashboard() {
     refetchInterval: 30000, // Check connection every 30 seconds
   });
 
+  const formatMessageTime = (dateStr: string) => {
+    return new Date(dateStr).toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+  };
+
+  const isFromMainNumber = (number: string) => number.endsWith('6311');
+
   return (
     <div className="container mx-auto px-4 py-6">
       {/* Twilio Status Banner */}
@@ -50,13 +61,8 @@ export function Dashboard() {
             ) : (
               <div className="space-y-1">
                 {conversations?.filter(conv => conv.channel === 'whatsapp').map((conversation) => {
-                  const time = new Date(conversation.latestMessage.createdAt)
-                    .toLocaleTimeString('en-US', {
-                      hour: 'numeric',
-                      minute: '2-digit',
-                      second: '2-digit',
-                      hour12: true
-                    });
+                  const fromNumber = conversation.contactNumber;
+                  const isMain = isFromMainNumber(fromNumber);
 
                   return (
                     <button
@@ -66,8 +72,8 @@ export function Dashboard() {
                         selectedNumber === conversation.contactNumber ? 'bg-zinc-900' : ''
                       }`}
                     >
-                      <div className="text-white">
-                        {`${time} ${conversation.contactName || conversation.contactNumber}`}
+                      <div className={`${isMain ? 'text-red-400' : 'text-green-400'}`}>
+                        {`${formatMessageTime(conversation.latestMessage.createdAt)} [${conversation.latestMessage.direction}]`}
                       </div>
                       <div className="text-sm text-zinc-400 truncate">
                         {conversation.latestMessage.content}

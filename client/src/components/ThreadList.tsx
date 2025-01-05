@@ -14,22 +14,36 @@ export function ThreadList({ contactId }: ThreadListProps) {
     return <div>Loading...</div>;
   }
 
+  const formatMessageTime = (dateStr: string) => {
+    return new Date(dateStr).toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+  };
+
+  const isFromMainNumber = (number: string) => number.endsWith('6311');
+
   return (
     <ScrollArea className="h-[calc(100vh-12rem)]">
       <div className="space-y-4 p-4">
-        {messages?.map((message) => (
-          <Card key={message.id} className="p-4">
-            <div className="flex justify-between items-start mb-2">
-              <span className="font-medium">
-                {message.direction === "inbound" ? "Received" : "Sent"}
-              </span>
-              <span className="text-sm text-muted-foreground">
-                {formatDistanceToNow(new Date(message.createdAt), { addSuffix: true })}
-              </span>
+        {messages?.map((message) => {
+          const fromNumber = message.direction === 'inbound' ? message.contactNumber : contactId.toString();
+          const isMain = isFromMainNumber(fromNumber);
+
+          return (
+            <div
+              key={message.id}
+              className={`text-sm whitespace-pre-wrap font-mono ${
+                isMain ? "text-red-400" : "text-green-400"
+              }`}
+            >
+              {`${formatMessageTime(message.createdAt)} [${message.direction}] ${message.content}`}
+              <span className="text-zinc-500"> :: {message.status}</span>
             </div>
-            <p className="text-sm">{message.content}</p>
-          </Card>
-        ))}
+          );
+        })}
       </div>
     </ScrollArea>
   );
