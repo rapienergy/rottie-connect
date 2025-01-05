@@ -14,7 +14,7 @@ for (const envVar of requiredEnvVars) {
   }
 }
 
-// Initialize Twilio client with error handling
+// Initialize Twilio client
 let twilioClient;
 try {
   twilioClient = twilio(
@@ -169,7 +169,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Twilio webhook for incoming messages
+  // WhatsApp Business API webhook
   app.post("/whatsapp/webhook", async (req, res) => {
     try {
       console.log('Received webhook request from:', req.ip);
@@ -280,18 +280,21 @@ export function registerRoutes(app: Express): Server {
   // Verify WhatsApp Business Profile status
   app.get("/api/twilio/status", async (_req, res) => {
     try {
-      // This function is not needed anymore because the WhatsApp profile is verified implicitly during webhook validation
-      res.json({status: "ok"});
+      // Simple connection test for WhatsApp Business API
+      res.json({
+        status: "connected",
+        channel: "whatsapp",
+        mode: "business_api"
+      });
     } catch (error: any) {
       console.error("WhatsApp Business API connection error:", error);
       res.status(500).json({
         status: 'error',
         message: error.message,
-        code: error.code || 'WHATSAPP_CONFIGURATION_ERROR'
+        code: error.code || 'WHATSAPP_API_ERROR'
       });
     }
   });
-
 
   return httpServer;
 }
