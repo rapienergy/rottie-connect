@@ -18,12 +18,6 @@ export interface Message {
   createdAt: string;
 }
 
-export interface TwilioConfig {
-  accountSid: string;
-  authToken: string;
-  phoneNumber: string;
-}
-
 export function useContacts() {
   return useQuery<Contact[]>({ queryKey: ["/api/contacts"] });
 }
@@ -33,10 +27,6 @@ export function useMessages(contactId: number) {
     queryKey: [`/api/messages/${contactId}`],
     enabled: !!contactId,
   });
-}
-
-export function useTwilioConfig() {
-  return useQuery<TwilioConfig>({ queryKey: ["/api/twilio/config"] });
 }
 
 export function useCreateContact() {
@@ -90,31 +80,6 @@ export function useSendMessage() {
     onError: (error) => {
       toast({
         title: "Failed to send message",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-}
-
-export function useUpdateTwilioConfig() {
-  return useMutation({
-    mutationFn: async (config: TwilioConfig) => {
-      const res = await fetch("/api/twilio/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/twilio/config"] });
-      toast({ title: "Twilio configuration updated successfully" });
-    },
-    onError: (error) => {
-      toast({
-        title: "Failed to update Twilio configuration",
         description: error.message,
         variant: "destructive",
       });

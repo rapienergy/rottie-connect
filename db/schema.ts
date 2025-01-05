@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, json, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, json } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 
@@ -18,18 +18,12 @@ export const messages = pgTable("messages", {
   direction: text("direction").notNull(), // 'inbound' or 'outbound'
   status: text("status").notNull(), // 'sent', 'delivered', 'failed'
   twilioSid: text("twilio_sid"),
-  metadata: json("metadata"),
+  metadata: json("metadata").$type<{
+    channel?: 'sms' | 'whatsapp' | 'voice';
+    recordingUrl?: string;
+    type?: string;
+  }>(),
   createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const twilioConfig = pgTable("twilio_config", {
-  id: serial("id").primaryKey(),
-  accountSid: text("account_sid").notNull(),
-  authToken: text("auth_token").notNull(),
-  phoneNumber: text("phone_number").notNull(),
-  active: boolean("active").default(true),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const messagesRelations = relations(messages, ({ one }) => ({
@@ -47,9 +41,6 @@ export const insertContactSchema = createInsertSchema(contacts);
 export const selectContactSchema = createSelectSchema(contacts);
 export const insertMessageSchema = createInsertSchema(messages);
 export const selectMessageSchema = createSelectSchema(messages);
-export const insertTwilioConfigSchema = createInsertSchema(twilioConfig);
-export const selectTwilioConfigSchema = createSelectSchema(twilioConfig);
 
 export type Contact = typeof contacts.$inferSelect;
 export type Message = typeof messages.$inferSelect;
-export type TwilioConfig = typeof twilioConfig.$inferSelect;

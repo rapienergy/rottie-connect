@@ -1,9 +1,8 @@
 import { Switch, Route, Link } from "wouter";
 import { Dashboard } from "@/pages/Dashboard";
-import { Settings } from "@/pages/Settings";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { AlertCircle, MessageSquare, Settings as SettingsIcon } from "lucide-react";
+import { AlertCircle, MessageSquare } from "lucide-react";
 import { useEffect } from "react";
 import { connectWebSocket, disconnectWebSocket } from "@/lib/socket";
 
@@ -16,22 +15,16 @@ function App() {
   return (
     <div className="min-h-screen bg-background">
       <nav className="border-b bg-card">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+        <div className="container mx-auto px-4 h-16 flex items-center">
           <Link href="/" className="flex items-center space-x-2">
             <MessageSquare className="h-6 w-6" />
             <span className="font-semibold text-lg">RottieInteractions</span>
-          </Link>
-          <Link href="/settings">
-            <Button variant="ghost" size="icon">
-              <SettingsIcon className="h-5 w-5" />
-            </Button>
           </Link>
         </div>
       </nav>
 
       <Switch>
         <Route path="/" component={Dashboard} />
-        <Route path="/settings" component={Settings} />
         <Route component={NotFound} />
       </Switch>
     </div>

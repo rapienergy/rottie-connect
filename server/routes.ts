@@ -2,16 +2,30 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
 import { db } from "@db";
-import { contacts, messages, twilioConfig } from "@db/schema";
+import { contacts, messages } from "@db/schema";
 import { eq, desc } from "drizzle-orm";
 import type { Twilio } from "twilio";
 import twilio from "twilio";
+
+// Validate required Twilio environment variables
+const requiredEnvVars = ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER'];
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    throw new Error(`${envVar} environment variable is required`);
+  }
+}
+
+// Initialize Twilio client once
+const twilioClient = twilio(
+  process.env.TWILIO_ACCOUNT_SID!,
+  process.env.TWILIO_AUTH_TOKEN!
+);
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
   const wss = new WebSocketServer({ 
     server: httpServer,
-    verifyClient: (info) => {
+    verifyClient: (info: any) => {
       // Ignore Vite HMR WebSocket connections
       return info.req.headers['sec-websocket-protocol'] !== 'vite-hmr';
     }
@@ -83,24 +97,6 @@ export function registerRoutes(app: Express): Server {
 
   app.post("/api/messages", async (req, res) => {
     try {
-      const config = await db.query.twilioConfig.findFirst({
-        where: eq(twilioConfig.active, true),
-      });
-
-      if (!config) {
-        res.status(400).json({ message: "Twilio configuration not found" });
-        return;
-      }
-
-      let twilioClient: Twilio;
-      try {
-        twilioClient = twilio(config.accountSid, config.authToken);
-      } catch (error: any) {
-        console.error("Twilio client initialization error:", error);
-        res.status(500).json({ message: "Failed to initialize Twilio client" });
-        return;
-      }
-
       const contact = await db.query.contacts.findFirst({
         where: eq(contacts.id, req.body.contactId),
       });
@@ -113,7 +109,8 @@ export function registerRoutes(app: Express): Server {
       const twilioMessage = await twilioClient.messages.create({
         body: req.body.content,
         to: contact.phone,
-        from: config.phoneNumber,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID, // Optional: for multi-channel messaging
       });
 
       const message = await db
@@ -134,59 +131,17 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Twilio Config API
-  app.get("/api/twilio/config", async (_req, res) => {
-    try {
-      const config = await db.query.twilioConfig.findFirst({
-        where: eq(twilioConfig.active, true),
-      });
-      res.json(config || null);
-    } catch (error) {
-      console.error("Error fetching Twilio config:", error);
-      res.status(500).json({ message: "Failed to fetch Twilio configuration" });
-    }
-  });
-
-  // Add console logging to the Twilio config endpoint
-  app.post("/api/twilio/config", async (req, res) => {
-    try {
-      console.log("Updating Twilio configuration...");
-
-      // Deactivate existing config
-      await db
-        .update(twilioConfig)
-        .set({ active: false })
-        .where(eq(twilioConfig.active, true));
-
-      // Insert new config
-      const config = await db
-        .insert(twilioConfig)
-        .values({ 
-          accountSid: process.env.TWILIO_ACCOUNT_SID || '',
-          authToken: process.env.TWILIO_AUTH_TOKEN || '',
-          phoneNumber: process.env.TWILIO_PHONE_NUMBER || '',
-          active: true 
-        })
-        .returning();
-
-      console.log("Twilio configuration updated successfully");
-      res.json(config[0]);
-    } catch (error) {
-      console.error("Error updating Twilio config:", error);
-      res.status(500).json({ message: "Failed to update Twilio configuration" });
-    }
-  });
-
-  // Twilio webhook for incoming messages
+  // Twilio webhook for incoming messages (SMS, WhatsApp)
   app.post("/api/twilio/webhook", async (req, res) => {
     try {
-      const { From, Body, MessageSid } = req.body;
+      const { From, Body, MessageSid, Channel = 'sms' } = req.body;
 
       const contact = await db.query.contacts.findFirst({
         where: eq(contacts.phone, From),
       });
 
       if (!contact) {
+        console.warn(`Received message from unknown contact: ${From}`);
         res.status(404).send("Contact not found");
         return;
       }
@@ -199,6 +154,7 @@ export function registerRoutes(app: Express): Server {
           direction: "inbound",
           status: "delivered",
           twilioSid: MessageSid,
+          metadata: { channel: Channel },
         })
         .returning();
 
@@ -206,6 +162,54 @@ export function registerRoutes(app: Express): Server {
       res.status(200).send();
     } catch (error) {
       console.error("Error processing webhook:", error);
+      res.status(500).send("Internal server error");
+    }
+  });
+
+  // Twilio webhook for voice calls
+  app.post("/api/twilio/voice", (req, res) => {
+    const twiml = new twilio.twiml.VoiceResponse();
+    twiml.say('Thank you for calling RAPIENERGY. Please leave a message after the tone.');
+    twiml.record({
+      action: '/api/twilio/recording',
+      maxLength: 30,
+      playBeep: true,
+    });
+    res.type('text/xml');
+    res.send(twiml.toString());
+  });
+
+  // Handle recorded voice messages
+  app.post("/api/twilio/recording", async (req, res) => {
+    try {
+      const { From, RecordingUrl, RecordingSid } = req.body;
+
+      const contact = await db.query.contacts.findFirst({
+        where: eq(contacts.phone, From),
+      });
+
+      if (!contact) {
+        console.warn(`Received voice message from unknown contact: ${From}`);
+        res.status(404).send("Contact not found");
+        return;
+      }
+
+      const message = await db
+        .insert(messages)
+        .values({
+          contactId: contact.id,
+          content: `Voice message: ${RecordingUrl}`,
+          direction: "inbound",
+          status: "delivered",
+          twilioSid: RecordingSid,
+          metadata: { type: 'voice', recordingUrl: RecordingUrl },
+        })
+        .returning();
+
+      broadcast({ type: "message_created", message: message[0] });
+      res.status(200).send();
+    } catch (error) {
+      console.error("Error processing voice recording:", error);
       res.status(500).send("Internal server error");
     }
   });
