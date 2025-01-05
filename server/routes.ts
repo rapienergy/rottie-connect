@@ -15,11 +15,14 @@ for (const envVar of requiredEnvVars) {
 }
 
 // Format phone number for WhatsApp
-function formatWhatsAppNumber(number: string): string {
+function formatWhatsAppNumber(number: string, isBusinessNumber = false): string {
   // Remove any non-digit characters except plus sign
   const cleaned = number.replace(/[^\d+]/g, '');
-  // Remove any extra plus signs, ensuring only one at the start if present
-  return cleaned.replace(/\++/g, '+').replace(/^\+?/, '+');
+  // Ensure there's exactly one plus sign at the start
+  const formatted = cleaned.replace(/\++/g, '+').replace(/^\+?/, '+');
+
+  // For sending messages, we need the full whatsapp: prefix
+  return isBusinessNumber ? `whatsapp:${formatted}` : formatted;
 }
 
 // Initialize Twilio client with error handling
@@ -73,14 +76,12 @@ export function registerRoutes(app: Express): Server {
     try {
       console.log('Fetching WhatsApp messages from Twilio...');
 
-      // Fetch messages from Twilio
       const twilioMessages = await twilioClient.messages.list({
         limit: 50
       });
 
       console.log(`Found ${twilioMessages.length} messages in Twilio`);
 
-      // Filter WhatsApp messages and format them
       const whatsappMessages = twilioMessages
         .filter(msg => msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:'))
         .map(msg => ({
@@ -119,6 +120,49 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Send a message
+  app.post("/api/messages", async (req, res) => {
+    try {
+      const { contactNumber, content } = req.body;
+      const formattedToNumber = formatWhatsAppNumber(contactNumber);
+      const formattedFromNumber = formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER!, true);
+
+      console.log(`Sending WhatsApp message from ${formattedFromNumber} to ${formattedToNumber}`);
+
+      const twilioMessage = await twilioClient.messages.create({
+        body: content,
+        to: formattedToNumber,
+        from: formattedFromNumber,
+      });
+
+      console.log(`Message sent successfully, SID: ${twilioMessage.sid}`);
+
+      const message = await db
+        .insert(messages)
+        .values({
+          contactNumber: formattedToNumber,
+          content,
+          direction: "outbound",
+          status: twilioMessage.status,
+          twilioSid: twilioMessage.sid,
+          metadata: {
+            channel: 'whatsapp'
+          },
+        })
+        .returning();
+
+      broadcast({ type: "message_created", message: message[0] });
+      res.json(message[0]);
+    } catch (error: any) {
+      console.error("Error sending message:", error);
+      res.status(500).json({
+        message: "Failed to send message",
+        error: error.message,
+        code: error.code
+      });
+    }
+  });
+
   // Get messages for a specific conversation
   app.get("/api/conversations/:contactNumber/messages", async (req, res) => {
     try {
@@ -151,47 +195,6 @@ export function registerRoutes(app: Express): Server {
     } catch (error) {
       console.error("Error fetching messages:", error);
       res.status(500).json({ message: "Failed to fetch messages" });
-    }
-  });
-
-  // Send a message
-  app.post("/api/messages", async (req, res) => {
-    try {
-      const { contactNumber, content } = req.body;
-      const formattedNumber = formatWhatsAppNumber(contactNumber);
-      console.log(`Sending WhatsApp message to ${formattedNumber}`);
-
-      const twilioMessage = await twilioClient.messages.create({
-        body: content,
-        to: `whatsapp:${formattedNumber}`,
-        from: `whatsapp:${formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER!)}`,
-      });
-
-      console.log(`Message sent successfully, SID: ${twilioMessage.sid}`);
-
-      const message = await db
-        .insert(messages)
-        .values({
-          contactNumber: formattedNumber,
-          content,
-          direction: "outbound",
-          status: twilioMessage.status,
-          twilioSid: twilioMessage.sid,
-          metadata: {
-            channel: 'whatsapp'
-          },
-        })
-        .returning();
-
-      broadcast({ type: "message_created", message: message[0] });
-      res.json(message[0]);
-    } catch (error: any) {
-      console.error("Error sending message:", error);
-      res.status(500).json({
-        message: "Failed to send message",
-        error: error.message,
-        code: error.code
-      });
     }
   });
 
