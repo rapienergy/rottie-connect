@@ -3,7 +3,7 @@ import { useMessages, useSendMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Send } from "lucide-react";
+import { MessageSquare, Phone, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface MessageThreadProps {
@@ -29,10 +29,14 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     await sendMessage.mutateAsync({ 
       contactNumber, 
       content,
-      channel: messages?.[0]?.metadata?.channel || 'whatsapp' // Use same channel as conversation
+      channel: messages?.[0]?.metadata?.channel || 'whatsapp' 
     });
     form.reset();
   };
+
+  const sortedMessages = messages?.slice().sort((a, b) => 
+    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  ) || [];
 
   return (
     <div className="h-full flex flex-col bg-black rounded-lg border border-zinc-800">
@@ -53,7 +57,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
             ))}
           </div>
         ) : (
-          messages?.map((message) => {
+          sortedMessages.map((message) => {
             const time = new Date(message.createdAt).toLocaleTimeString('en-US', {
               hour: 'numeric',
               minute: '2-digit',
@@ -61,15 +65,22 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
               hour12: true
             });
 
+            const isOutbound = message.direction === "outbound";
+            const messageClass = cn(
+              "flex items-center gap-2 p-3 rounded-lg",
+              isOutbound ? "bg-green-600/20 text-green-400" : "bg-zinc-800 text-white"
+            );
+
+            const channelIcon = message.metadata?.channel === 'whatsapp' 
+              ? <MessageSquare className="h-4 w-4" /> 
+              : <Phone className="h-4 w-4" />;
+
             return (
-              <div
-                key={message.id}
-                className={cn(
-                  "font-mono text-sm",
-                  message.direction === "outbound" ? "text-green-400" : "text-white"
-                )}
-              >
-                {`${time} [${message.metadata?.channel || 'whatsapp'}] ${message.content} :: ${message.status}`}
+              <div key={message.id} className={messageClass}>
+                <span className="text-xs text-zinc-500">{time}</span>
+                {channelIcon}
+                <span>{message.content}</span>
+                <span className="text-xs text-zinc-500 ml-auto">{message.status}</span>
               </div>
             );
           })
