@@ -3,7 +3,7 @@ import { useMessages, useSendMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Send } from "lucide-react";
+import { Send, Check, CheckCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface MessageThreadProps {
@@ -15,7 +15,6 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
   const sendMessage = useSendMessage();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const systemNumber = import.meta.env.VITE_TWILIO_PHONE_NUMBER || '';
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -54,9 +53,20 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     });
   };
 
+  const getStatusIcon = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'read':
+        return <CheckCheck className="h-3 w-3 inline-block ml-1" />;
+      case 'delivered':
+        return <Check className="h-3 w-3 inline-block ml-1" />;
+      default:
+        return null;
+    }
+  };
+
   // Helper to determine if a message is outbound (from us to client)
   const isOutboundMessage = (message: any) => {
-    return message.direction === "outbound" || message.twilioSid?.startsWith('SM');
+    return message.direction === "outbound";
   };
 
   // Sort messages by time
@@ -88,14 +98,23 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
                 <div
                   key={message.id}
                   className={cn(
-                    "text-sm whitespace-pre-wrap font-mono p-1 rounded",
-                    isOutbound
-                      ? "bg-red-900 text-red-400"
-                      : "bg-green-900 text-green-400"
+                    "text-sm whitespace-pre-wrap font-mono p-2 rounded flex items-start gap-2",
+                    isOutbound ? "bg-red-900 text-red-400" : "bg-green-900 text-green-400"
                   )}
                 >
-                  {`${formatMessageTime(message.createdAt)} [${isOutbound ? 'outbound' : 'inbound'}] ${message.content}`}
-                  <span className="text-zinc-500"> :: {message.status}</span>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs opacity-70">{formatMessageTime(message.createdAt)}</span>
+                      <span className="text-xs px-1 rounded bg-opacity-20 bg-current">
+                        {isOutbound ? 'outbound' : 'inbound'}
+                      </span>
+                    </div>
+                    <div className="mt-1">{message.content}</div>
+                  </div>
+                  <div className="text-xs opacity-70 flex items-center">
+                    {message.status}
+                    {getStatusIcon(message.status)}
+                  </div>
                 </div>
               );
             })}
