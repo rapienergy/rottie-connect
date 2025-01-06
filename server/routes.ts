@@ -348,37 +348,33 @@ export function registerRoutes(app: Express): Server {
       });
 
       // Filter messages for this specific contact's conversation
-      // Include both messages sent to and received from this number
       const contactMessages = messages.filter(msg => {
         // Get clean numbers without whatsapp: prefix
         const normalizedTo = msg.to?.replace('whatsapp:', '');
         const normalizedFrom = msg.from?.replace('whatsapp:', '');
-        const normalizedContactNumber = contactNumber.replace('whatsapp:', '');
 
         // Include messages where this contact is either sender or receiver
-        return normalizedTo === normalizedContactNumber || 
-               normalizedFrom === normalizedContactNumber;
+        return normalizedTo === contactNumber || normalizedFrom === contactNumber;
       });
 
       // Map and format messages
-      const formattedMessages = contactMessages.map(msg => {
-        const isInbound = msg.direction === 'inbound';
-        return {
-          id: msg.sid,
-          contactNumber: isInbound ? msg.from?.replace('whatsapp:', '') : msg.to?.replace('whatsapp:', ''),
-          content: msg.body || '',
-          direction: isInbound ? 'inbound' : 'rottie', // Format outbound messages as 'rottie'
-          status: msg.status,
-          twilioSid: msg.sid,
-          metadata: {
-            channel: msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:') ? 'whatsapp' : 'sms',
-            profile: {
-              name: isInbound ? msg.from : msg.to
-            }
-          },
-          createdAt: msg.dateCreated
-        };
-      });
+      const formattedMessages = contactMessages.map(msg => ({
+        id: msg.sid,
+        contactNumber: msg.direction === 'inbound' ? 
+          msg.from?.replace('whatsapp:', '') :
+          msg.to?.replace('whatsapp:', ''),
+        content: msg.body || '',
+        direction: msg.direction,
+        status: msg.status,
+        twilioSid: msg.sid,
+        metadata: {
+          channel: msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:') ? 'whatsapp' : 'sms',
+          profile: {
+            name: msg.direction === 'inbound' ? msg.from : msg.to
+          }
+        },
+        createdAt: msg.dateCreated
+      }));
 
       // Sort messages by date
       formattedMessages.sort((a, b) => 
