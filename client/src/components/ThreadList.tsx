@@ -40,7 +40,7 @@ export function ThreadList({ contactId }: ThreadListProps) {
             <div
               key={message.id}
               className={`text-sm whitespace-pre-wrap font-mono ${
-                isMain ? "text-red-400" : "text-green-400"
+                message.direction === 'outbound' ? "text-blue-400" : "text-green-400"
               }`}
             >
               {`${formatMessageTime(message.createdAt)} [${formatDirection(message.direction)}] ${message.content}`}

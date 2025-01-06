@@ -4,6 +4,7 @@ import { MessageThread } from "@/components/MessageThread";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MessageSquare, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { cn } from "@/lib/utils"; // Assuming cn utility function is available
 
 export function Dashboard() {
   const [selectedNumber, setSelectedNumber] = useState<string | null>(null);
@@ -26,7 +27,6 @@ export function Dashboard() {
 
   return (
     <div className="container mx-auto px-4 py-6">
-      {/* Twilio Status Banner */}
       {twilioStatus && (
         <div className={`mb-4 p-2 rounded-md font-mono text-sm ${
           twilioStatus.status === 'connected'
@@ -45,7 +45,6 @@ export function Dashboard() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 h-[calc(100vh-8rem)]">
-        {/* Conversations List */}
         <div className="md:col-span-3 h-full flex flex-col bg-black rounded-lg border border-zinc-800">
           <div className="p-4 border-b border-zinc-800">
             <h2 className="font-mono text-white mb-2">WhatsApp Conversations</h2>
@@ -72,7 +71,7 @@ export function Dashboard() {
                         selectedNumber === conversation.contactNumber ? 'bg-zinc-900' : ''
                       }`}
                     >
-                      <div className={`text-sm ${isMain ? 'text-blue-400' : 'text-white'}`}>
+                      <div className="text-sm text-white">
                         {conversation.contactNumber}
                       </div>
                       <div className="text-xs text-zinc-500">
@@ -80,7 +79,10 @@ export function Dashboard() {
                           conversation.latestMessage.direction.startsWith('outbound') ? 'rottie' : conversation.latestMessage.direction
                         }]`}
                       </div>
-                      <div className="text-sm text-zinc-400 truncate">
+                      <div className={cn(
+                        "text-sm truncate",
+                        conversation.latestMessage.direction.startsWith('outbound') ? "text-blue-400" : "text-zinc-400"
+                      )}>
                         {conversation.latestMessage.content}
                       </div>
                     </button>
@@ -98,7 +100,6 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Message Thread */}
         <div className="md:col-span-9 h-full flex flex-col">
           {selectedNumber ? (
             <MessageThread contactNumber={selectedNumber} />
