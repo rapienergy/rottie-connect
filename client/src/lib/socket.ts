@@ -55,55 +55,60 @@ export function connectWebSocket() {
 
       switch (data.type) {
         case "message_created":
-          // Update the conversation list cache immediately
+          // Ensure we don't duplicate messages by checking if they already exist
+          const messageExists = (queryData: any[], message: any) => {
+            return queryData?.some(msg => msg.id === message.id || msg.twilioSid === message.twilioSid);
+          };
+
+          // Update the messages cache for the specific conversation
+          queryClient.setQueryData(
+            [`/api/conversations/${data.message.contactNumber}/messages`],
+            (oldData: any) => {
+              if (!oldData) return [data.message];
+              if (messageExists(oldData, data.message)) return oldData;
+              return [...oldData, data.message];
+            }
+          );
+
+          // Update conversations list
           queryClient.setQueryData(['/api/conversations'], (oldData: any) => {
             if (!oldData) return [data.message];
 
-            // Find if this conversation already exists
             const existingConversationIndex = oldData.findIndex(
               (conv: any) => conv.contactNumber === data.message.contactNumber
             );
 
             if (existingConversationIndex === -1) {
-              // New conversation
               return [{
                 contactNumber: data.message.contactNumber,
+                contactName: data.message.contactName,
                 latestMessage: {
                   content: data.message.content,
                   direction: data.message.direction,
                   status: data.message.status,
                   createdAt: data.message.createdAt
                 },
-                channel: data.message.metadata?.channel || 'sms'
+                channel: data.message.metadata?.channel || 'whatsapp'
               }, ...oldData];
-            } else {
-              // Update existing conversation
-              const updatedConversations = [...oldData];
-              updatedConversations[existingConversationIndex] = {
-                ...updatedConversations[existingConversationIndex],
-                latestMessage: {
-                  content: data.message.content,
-                  direction: data.message.direction,
-                  status: data.message.status,
-                  createdAt: data.message.createdAt
-                }
-              };
-              return updatedConversations;
             }
-          });
 
-          // Update the conversation messages cache immediately
-          queryClient.setQueryData(
-            [`/api/conversations/${data.message.contactNumber}/messages`],
-            (oldData: any) => {
-              if (!oldData) return [data.message];
-              return [...oldData, data.message];
-            }
-          );
+            const updatedConversations = [...oldData];
+            updatedConversations[existingConversationIndex] = {
+              ...updatedConversations[existingConversationIndex],
+              contactName: data.message.contactName,
+              latestMessage: {
+                content: data.message.content,
+                direction: data.message.direction,
+                status: data.message.status,
+                createdAt: data.message.createdAt
+              }
+            };
+            return updatedConversations;
+          });
           break;
 
         case "message_status_updated":
-          // Update message status in both caches
+          // Update message status in the messages cache
           queryClient.setQueryData(
             [`/api/conversations/${data.message.contactNumber}/messages`],
             (oldData: any) => {
@@ -116,7 +121,7 @@ export function connectWebSocket() {
             }
           );
 
-          // Update status in conversations list if it's the latest message
+          // Update status in conversations list
           queryClient.setQueryData(['/api/conversations'], (oldData: any) => {
             if (!oldData) return oldData;
             return oldData.map((conv: any) => {

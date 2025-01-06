@@ -54,11 +54,9 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
   };
 
   const formatDirection = (direction: string) => {
-    // Return 'rottie' for outbound messages, including 'outbound-api'
+    // Return 'rottie' for all outbound messages
     return direction.startsWith('outbound') ? 'rottie' : direction;
   };
-
-  const isFromMainNumber = (number: string) => number.endsWith('6311');
 
   return (
     <div className="h-full flex flex-col bg-black rounded-lg border border-zinc-800">
@@ -78,23 +76,18 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
           </div>
         ) : (
           <div className="space-y-2">
-            {messages?.map((message) => {
-              const fromNumber = message.direction === 'inbound' ? message.contactNumber : contactNumber;
-              const isMain = isFromMainNumber(fromNumber);
-
-              return (
-                <div
-                  key={message.id}
-                  className={cn(
-                    "text-sm whitespace-pre-wrap font-mono",
-                    isMain ? "text-red-400" : "text-green-400"
-                  )}
-                >
-                  {`${formatMessageTime(message.createdAt)} [${formatDirection(message.direction)}] ${message.content}`}
-                  <span className="text-zinc-500"> :: {message.status}</span>
-                </div>
-              );
-            })}
+            {messages?.map((message) => (
+              <div
+                key={`${message.id}-${message.twilioSid}`}
+                className={cn(
+                  "text-sm whitespace-pre-wrap font-mono",
+                  message.direction.startsWith('outbound') ? "text-blue-400" : "text-green-400"
+                )}
+              >
+                {`${formatMessageTime(message.createdAt)} [${formatDirection(message.direction)}] ${message.content}`}
+                <span className="text-zinc-500"> :: {message.status}</span>
+              </div>
+            ))}
             <div ref={messagesEndRef} />
           </div>
         )}
