@@ -139,7 +139,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
                     key={`${message.id}-${message.twilioSid}`}
                     className={cn(
                       "text-sm whitespace-pre-wrap",
-                      message.direction === 'outbound' ? "text-blue-600" : "text-green-400"
+                      message.direction.startsWith('outbound') ? "text-blue-400" : "text-green-400"
                     )}
                   >
                     {`${formatMessageTime(message.createdAt)} [${formatDirection(message.direction)}] ${message.content}`}
