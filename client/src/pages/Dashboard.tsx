@@ -72,7 +72,10 @@ export function Dashboard() {
                         selectedNumber === conversation.contactNumber ? 'bg-zinc-900' : ''
                       }`}
                     >
-                      <div className={`${isMain ? 'text-red-400' : 'text-green-400'}`}>
+                      <div className={`text-sm ${isMain ? 'text-blue-400' : 'text-white'}`}>
+                        {conversation.contactNumber}
+                      </div>
+                      <div className="text-xs text-zinc-500">
                         {`${formatMessageTime(conversation.latestMessage.createdAt)} [${conversation.latestMessage.direction}]`}
                       </div>
                       <div className="text-sm text-zinc-400 truncate">
