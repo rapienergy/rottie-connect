@@ -2,49 +2,156 @@ import { queryClient } from "./queryClient";
 
 let socket: WebSocket | null = null;
 let reconnectTimeout: number | null = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const INITIAL_RECONNECT_DELAY = 1000;
+
+export type WebSocketStatus = 'connected' | 'connecting' | 'disconnected' | 'error';
+let socketStatus: WebSocketStatus = 'disconnected';
+const statusListeners: ((status: WebSocketStatus) => void)[] = [];
+
+export function subscribeToSocketStatus(listener: (status: WebSocketStatus) => void) {
+  statusListeners.push(listener);
+  // Immediately notify of current status
+  listener(socketStatus);
+
+  // Return unsubscribe function
+  return () => {
+    const index = statusListeners.indexOf(listener);
+    if (index > -1) {
+      statusListeners.splice(index, 1);
+    }
+  };
+}
+
+function updateSocketStatus(newStatus: WebSocketStatus) {
+  socketStatus = newStatus;
+  statusListeners.forEach(listener => listener(newStatus));
+}
+
+function getReconnectDelay(): number {
+  // Exponential backoff with a maximum of 30 seconds
+  return Math.min(INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempts), 30000);
+}
 
 export function connectWebSocket() {
-  if (socket) return;
+  if (socket?.readyState === WebSocket.OPEN) return;
+
+  updateSocketStatus('connecting');
 
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   socket = new WebSocket(`${protocol}//${window.location.host}`);
 
-  socket.onmessage = (event) => {
-    const data = JSON.parse(event.data);
+  socket.onopen = () => {
+    console.log('WebSocket connected');
+    updateSocketStatus('connected');
+    reconnectAttempts = 0; // Reset reconnect attempts on successful connection
+  };
 
-    switch (data.type) {
-      case "message_created":
-        queryClient.invalidateQueries({
-          queryKey: [`/api/messages/${data.message.contactId}`],
-        });
-        break;
-      case "contact_created":
-        queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
-        break;
+  socket.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      console.log('WebSocket message received:', data);
+
+      switch (data.type) {
+        case "message_created":
+          // Invalidate both the conversation list and the specific conversation messages
+          queryClient.invalidateQueries({ 
+            queryKey: ['/api/conversations']
+          });
+          if (data.message.contactNumber) {
+            queryClient.invalidateQueries({ 
+              queryKey: [`/api/conversations/${data.message.contactNumber}/messages`]
+            });
+          }
+          break;
+
+        case "message_status_updated":
+          // Update message status in cache without refetching
+          queryClient.setQueryData(
+            [`/api/conversations/${data.message.contactNumber}/messages`],
+            (oldData: any) => {
+              if (!oldData) return oldData;
+              return oldData.map((msg: any) => 
+                msg.twilioSid === data.message.twilioSid 
+                  ? { ...msg, status: data.message.status }
+                  : msg
+              );
+            }
+          );
+          break;
+
+        case "pong":
+          // Handle server pong response
+          console.log('Server pong received');
+          break;
+      }
+    } catch (error) {
+      console.error('Error processing WebSocket message:', error);
     }
   };
 
-  socket.onclose = () => {
-    socket = null;
-    if (reconnectTimeout) clearTimeout(reconnectTimeout);
-    reconnectTimeout = window.setTimeout(connectWebSocket, 5000);
+  socket.onerror = (error) => {
+    console.error('WebSocket error:', error);
+    updateSocketStatus('error');
   };
 
-  // Keep connection alive
-  setInterval(() => {
+  socket.onclose = () => {
+    console.log('WebSocket closed');
+    socket = null;
+    updateSocketStatus('disconnected');
+
+    // Clear any existing reconnect timeout
+    if (reconnectTimeout) {
+      clearTimeout(reconnectTimeout);
+      reconnectTimeout = null;
+    }
+
+    // Attempt to reconnect if we haven't exceeded max attempts
+    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      reconnectAttempts++;
+      const delay = getReconnectDelay();
+      console.log(`Attempting to reconnect in ${delay}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+      reconnectTimeout = window.setTimeout(connectWebSocket, delay);
+    } else {
+      console.log('Max reconnection attempts reached');
+      updateSocketStatus('error');
+    }
+  };
+
+  // Keep connection alive with ping every 30 seconds
+  const pingInterval = setInterval(() => {
     if (socket?.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: "ping" }));
+    } else if (!socket || socket.readyState === WebSocket.CLOSED) {
+      clearInterval(pingInterval);
     }
   }, 30000);
 }
 
 export function disconnectWebSocket() {
+  statusListeners.length = 0; // Clear all listeners
+
   if (socket) {
     socket.close();
     socket = null;
   }
+
   if (reconnectTimeout) {
     clearTimeout(reconnectTimeout);
     reconnectTimeout = null;
   }
+
+  reconnectAttempts = 0;
+  updateSocketStatus('disconnected');
+}
+
+// Automatically reconnect when the window regains focus
+if (typeof window !== 'undefined') {
+  window.addEventListener('focus', () => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      reconnectAttempts = 0; // Reset attempts when user actively tries to reconnect
+      connectWebSocket();
+    }
+  });
 }

@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, WebSocket } from "ws";
 import { db } from "@db";
 import { messages } from "@db/schema";
 import { eq, desc } from "drizzle-orm";
@@ -49,18 +49,58 @@ export function registerRoutes(app: Express): Server {
   const wss = new WebSocketServer({ 
     server: httpServer,
     verifyClient: (info: any) => {
+      // Ignore Vite HMR websocket connections
       return info.req.headers['sec-websocket-protocol'] !== 'vite-hmr';
     }
   });
 
+  // Track active connections
+  const clients = new Set<WebSocket>();
+
   // Broadcast to all clients
   const broadcast = (message: any) => {
-    wss.clients.forEach((client) => {
-      if (client.readyState === 1) {
-        client.send(JSON.stringify(message));
+    const messageStr = JSON.stringify(message);
+    clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(messageStr);
       }
     });
   };
+
+  // Handle WebSocket connections
+  wss.on('connection', (ws: WebSocket) => {
+    console.log('New WebSocket client connected');
+    clients.add(ws);
+
+    // Handle client messages
+    ws.on('message', (message: string) => {
+      try {
+        const data = JSON.parse(message.toString());
+
+        // Handle different message types
+        switch (data.type) {
+          case 'ping':
+            ws.send(JSON.stringify({ type: 'pong' }));
+            break;
+          // Add more message type handlers here as needed
+        }
+      } catch (error) {
+        console.error('Error processing WebSocket message:', error);
+      }
+    });
+
+    // Handle client disconnection
+    ws.on('close', () => {
+      console.log('WebSocket client disconnected');
+      clients.delete(ws);
+    });
+
+    // Handle errors
+    ws.on('error', (error) => {
+      console.error('WebSocket error:', error);
+      clients.delete(ws);
+    });
+  });
 
   // Webhook handler for all channels
   app.post("/webhook", async (req, res) => {
@@ -101,7 +141,21 @@ export function registerRoutes(app: Express): Server {
         Body,
         MessageSid,
         ProfileName,
+        MessageStatus, // Added to handle status updates
       } = req.body;
+
+      // Handle message status updates
+      if (MessageStatus) {
+        broadcast({
+          type: "message_status_updated",
+          message: {
+            twilioSid: MessageSid,
+            status: MessageStatus,
+            contactNumber: From?.replace('whatsapp:', '')
+          }
+        });
+        return res.status(200).send('OK');
+      }
 
       // Determine channel type
       const isWhatsApp = From?.startsWith('whatsapp:') || To?.startsWith('whatsapp:');
@@ -130,8 +184,11 @@ export function registerRoutes(app: Express): Server {
         })
         .returning();
 
-      // Notify connected clients
-      broadcast({ type: "message_created", message: message[0] });
+      // After storing the message, broadcast it
+      broadcast({ 
+        type: "message_created", 
+        message: message[0] 
+      });
 
       // Return TwiML response
       res.type('text/xml').send(`
@@ -191,7 +248,12 @@ export function registerRoutes(app: Express): Server {
         })
         .returning();
 
-      broadcast({ type: "message_created", message: message[0] });
+      // Broadcast the new message to all connected clients
+      broadcast({ 
+        type: "message_created", 
+        message: message[0] 
+      });
+
       res.json(message[0]);
     } catch (error: any) {
       console.error("Error sending message:", error);
