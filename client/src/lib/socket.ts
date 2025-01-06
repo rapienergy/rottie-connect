@@ -55,19 +55,55 @@ export function connectWebSocket() {
 
       switch (data.type) {
         case "message_created":
-          // Invalidate both the conversation list and the specific conversation messages
-          queryClient.invalidateQueries({ 
-            queryKey: ['/api/conversations']
+          // Update the conversation list cache immediately
+          queryClient.setQueryData(['/api/conversations'], (oldData: any) => {
+            if (!oldData) return [data.message];
+
+            // Find if this conversation already exists
+            const existingConversationIndex = oldData.findIndex(
+              (conv: any) => conv.contactNumber === data.message.contactNumber
+            );
+
+            if (existingConversationIndex === -1) {
+              // New conversation
+              return [{
+                contactNumber: data.message.contactNumber,
+                latestMessage: {
+                  content: data.message.content,
+                  direction: data.message.direction,
+                  status: data.message.status,
+                  createdAt: data.message.createdAt
+                },
+                channel: data.message.metadata?.channel || 'sms'
+              }, ...oldData];
+            } else {
+              // Update existing conversation
+              const updatedConversations = [...oldData];
+              updatedConversations[existingConversationIndex] = {
+                ...updatedConversations[existingConversationIndex],
+                latestMessage: {
+                  content: data.message.content,
+                  direction: data.message.direction,
+                  status: data.message.status,
+                  createdAt: data.message.createdAt
+                }
+              };
+              return updatedConversations;
+            }
           });
-          if (data.message.contactNumber) {
-            queryClient.invalidateQueries({ 
-              queryKey: [`/api/conversations/${data.message.contactNumber}/messages`]
-            });
-          }
+
+          // Update the conversation messages cache immediately
+          queryClient.setQueryData(
+            [`/api/conversations/${data.message.contactNumber}/messages`],
+            (oldData: any) => {
+              if (!oldData) return [data.message];
+              return [...oldData, data.message];
+            }
+          );
           break;
 
         case "message_status_updated":
-          // Update message status in cache without refetching
+          // Update message status in both caches
           queryClient.setQueryData(
             [`/api/conversations/${data.message.contactNumber}/messages`],
             (oldData: any) => {
@@ -79,10 +115,26 @@ export function connectWebSocket() {
               );
             }
           );
+
+          // Update status in conversations list if it's the latest message
+          queryClient.setQueryData(['/api/conversations'], (oldData: any) => {
+            if (!oldData) return oldData;
+            return oldData.map((conv: any) => {
+              if (conv.contactNumber === data.message.contactNumber) {
+                return {
+                  ...conv,
+                  latestMessage: {
+                    ...conv.latestMessage,
+                    status: data.message.status
+                  }
+                };
+              }
+              return conv;
+            });
+          });
           break;
 
         case "pong":
-          // Handle server pong response
           console.log('Server pong received');
           break;
       }
