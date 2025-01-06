@@ -4,7 +4,7 @@ import { MessageThread } from "@/components/MessageThread";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MessageSquare, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "@/lib/utils"; // Assuming cn utility function is available
+import { cn } from "@/lib/utils";
 
 export function Dashboard() {
   const [selectedNumber, setSelectedNumber] = useState<string | null>(null);
@@ -23,7 +23,13 @@ export function Dashboard() {
     });
   };
 
-  const isFromMainNumber = (number: string) => number.endsWith('6311');
+  const isRottieMessage = (direction: string) => {
+    return direction === 'rottie' || direction === 'outbound-api' || direction.startsWith('outbound');
+  };
+
+  const formatDirection = (direction: string) => {
+    return isRottieMessage(direction) ? 'rottie' : direction;
+  };
 
   return (
     <div className="container mx-auto px-4 py-6">
@@ -59,35 +65,31 @@ export function Dashboard() {
               </div>
             ) : (
               <div className="space-y-1">
-                {conversations?.filter(conv => conv.channel === 'whatsapp').map((conversation) => {
-                  const fromNumber = conversation.contactNumber;
-                  const isMain = isFromMainNumber(fromNumber);
-
-                  return (
-                    <button
-                      key={conversation.contactNumber}
-                      onClick={() => setSelectedNumber(conversation.contactNumber)}
-                      className={`w-full p-3 rounded-md text-left font-mono hover:bg-zinc-900 transition-colors ${
-                        selectedNumber === conversation.contactNumber ? 'bg-zinc-900' : ''
-                      }`}
-                    >
-                      <div className="text-sm text-white">
-                        {conversation.contactNumber}
-                      </div>
-                      <div className="text-xs text-zinc-500">
-                        {`${formatMessageTime(conversation.latestMessage.createdAt)} [${
-                          conversation.latestMessage.direction.startsWith('outbound') ? 'rottie' : conversation.latestMessage.direction
-                        }]`}
-                      </div>
-                      <div className={cn(
-                        "text-sm truncate",
-                        conversation.latestMessage.direction.startsWith('outbound') ? "text-blue-400" : "text-zinc-400"
-                      )}>
-                        {conversation.latestMessage.content}
-                      </div>
-                    </button>
-                  );
-                })}
+                {conversations?.filter(conv => conv.channel === 'whatsapp').map((conversation) => (
+                  <button
+                    key={conversation.contactNumber}
+                    onClick={() => setSelectedNumber(conversation.contactNumber)}
+                    className={cn(
+                      "w-full p-3 rounded-md text-left font-mono hover:bg-zinc-900 transition-colors",
+                      selectedNumber === conversation.contactNumber ? 'bg-zinc-900' : ''
+                    )}
+                  >
+                    <div className="text-sm text-white">
+                      {conversation.contactNumber}
+                    </div>
+                    <div className="text-xs text-zinc-500">
+                      {`${formatMessageTime(conversation.latestMessage.createdAt)} [${
+                        formatDirection(conversation.latestMessage.direction)
+                      }]`}
+                    </div>
+                    <div className={cn(
+                      "text-sm truncate",
+                      isRottieMessage(conversation.latestMessage.direction) ? "text-blue-400" : "text-zinc-400"
+                    )}>
+                      {conversation.latestMessage.content}
+                    </div>
+                  </button>
+                ))}
 
                 {conversations?.length === 0 && (
                   <div className="text-center text-zinc-400 font-mono p-4">
