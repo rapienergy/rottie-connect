@@ -341,16 +341,24 @@ export function registerRoutes(app: Express): Server {
       }
 
       const { contactNumber } = req.params;
-      console.log(`Fetching all messages related to ${contactNumber}`);
+      console.log(`Fetching all historical messages related to ${contactNumber}`);
 
-      // Fetch all messages from Twilio
-      const messages = await twilioClient.messages.list({
-        limit: 1000, // Increased limit to get more historical data
+      // Get all messages from database first
+      const dbMessages = await db
+        .select()
+        .from(messages)
+        .where(eq(messages.contactNumber, contactNumber))
+        .orderBy(desc(messages.createdAt));
+
+      console.log(`Found ${dbMessages.length} messages in database for ${contactNumber}`);
+
+      // Fetch messages from Twilio with increased limit
+      const twilioMessages = await twilioClient.messages.list({
+        limit: 5000, // Increased limit for more historical data
       });
 
       // Filter messages for this specific contact's conversation
-      // Include messages where this number appears in either to or from fields
-      const contactMessages = messages.filter(msg => {
+      const contactMessages = twilioMessages.filter(msg => {
         // Get clean numbers without whatsapp: prefix for comparison
         const normalizedTo = msg.to?.replace('whatsapp:', '');
         const normalizedFrom = msg.from?.replace('whatsapp:', '');
@@ -360,10 +368,10 @@ export function registerRoutes(app: Express): Server {
         return normalizedTo === searchNumber || normalizedFrom === searchNumber;
       });
 
-      console.log(`Found ${contactMessages.length} messages related to ${contactNumber}`);
+      console.log(`Found ${contactMessages.length} messages in Twilio for ${contactNumber}`);
 
-      // Map and format messages
-      const formattedMessages = contactMessages.map(msg => ({
+      // Map Twilio messages to our format
+      const formattedTwilioMessages = contactMessages.map(msg => ({
         id: msg.sid,
         contactNumber: msg.direction === 'inbound' ? 
           msg.from?.replace('whatsapp:', '') :
@@ -381,22 +389,30 @@ export function registerRoutes(app: Express): Server {
         createdAt: msg.dateCreated
       }));
 
+      // Combine messages from both sources and remove duplicates
+      const allMessages = [...dbMessages, ...formattedTwilioMessages];
+      const uniqueMessages = Array.from(
+        new Map(allMessages.map(msg => [msg.twilioSid || msg.id, msg])).values()
+      );
+
       // Sort messages chronologically
-      formattedMessages.sort((a, b) => 
+      uniqueMessages.sort((a, b) => 
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       );
 
-      // Get conversation statistics
+      // Get comprehensive conversation statistics
       const stats = {
-        total: formattedMessages.length,
-        sent: formattedMessages.filter(m => m.direction.startsWith('outbound')).length,
-        received: formattedMessages.filter(m => m.direction === 'inbound').length
+        total: uniqueMessages.length,
+        sent: uniqueMessages.filter(m => m.direction.startsWith('outbound')).length,
+        received: uniqueMessages.filter(m => m.direction === 'inbound').length,
+        firstInteraction: uniqueMessages[0]?.createdAt,
+        lastInteraction: uniqueMessages[uniqueMessages.length - 1]?.createdAt,
       };
 
-      console.log(`Stats for ${contactNumber}:`, stats);
+      console.log(`Total unique messages for ${contactNumber}:`, stats);
 
       res.json({
-        messages: formattedMessages,
+        messages: uniqueMessages,
         stats: stats
       });
     } catch (error: any) {

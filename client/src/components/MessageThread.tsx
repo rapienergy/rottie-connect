@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Send } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { format, isToday, isYesterday } from "date-fns";
+import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
 
 interface MessageThreadProps {
   contactNumber: string;
@@ -26,6 +26,8 @@ interface MessageResponse {
     total: number;
     sent: number;
     received: number;
+    firstInteraction?: string;
+    lastInteraction?: string;
   };
 }
 
@@ -81,6 +83,11 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     return direction.startsWith('outbound') ? 'rottie' : direction;
   };
 
+  const formatInteractionTime = (dateStr?: string) => {
+    if (!dateStr) return '';
+    return formatDistanceToNow(new Date(dateStr), { addSuffix: true });
+  };
+
   // Group messages by date with proper typing
   const groupedMessages = messages.reduce<Record<string, typeof messages>>((groups, message) => {
     const date = format(new Date(message.createdAt), 'yyyy-MM-dd');
@@ -98,7 +105,16 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
           {messages[0]?.contactName || contactNumber}
         </h2>
         <p className="font-mono text-sm text-zinc-400">
-          WhatsApp Business • {stats && `${stats.total} messages (${stats.sent} sent, ${stats.received} received)`}
+          WhatsApp Business • {stats && (
+            <>
+              {stats.total} messages ({stats.sent} sent, {stats.received} received)
+              {stats.firstInteraction && (
+                <span className="ml-2">
+                  • First interaction: {formatInteractionTime(stats.firstInteraction)}
+                </span>
+              )}
+            </>
+          )}
         </p>
       </div>
 
