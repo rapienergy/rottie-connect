@@ -343,7 +343,7 @@ export function registerRoutes(app: Express): Server {
       const { contactNumber } = req.params;
       console.log(`Fetching all messages related to ${contactNumber}`);
 
-      // Fetch all messages from Twilio
+      // Fetch all messages from Twilio with an increased limit for complete history
       const messages = await twilioClient.messages.list({
         limit: 1000, // Increased limit to get more historical data
       });
@@ -369,7 +369,7 @@ export function registerRoutes(app: Express): Server {
           msg.from?.replace('whatsapp:', '') :
           msg.to?.replace('whatsapp:', ''),
         content: msg.body || '',
-        direction: msg.direction,
+        direction: msg.direction === 'outbound-api' ? 'rottie' : msg.direction,
         status: msg.status,
         twilioSid: msg.sid,
         metadata: {
@@ -389,7 +389,7 @@ export function registerRoutes(app: Express): Server {
       // Get conversation statistics
       const stats = {
         total: formattedMessages.length,
-        sent: formattedMessages.filter(m => m.direction.startsWith('outbound')).length,
+        sent: formattedMessages.filter(m => m.direction === 'rottie').length,
         received: formattedMessages.filter(m => m.direction === 'inbound').length
       };
 
