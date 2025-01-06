@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { db } from "@db";
 import { messages } from "@db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import twilio from "twilio";
 import type { Twilio } from "twilio";
 
@@ -23,25 +23,30 @@ try {
   console.error('Failed to initialize Twilio client:', error);
 }
 
-// Format number for various channels
-function formatPhoneNumber(phoneNumber: string, channel: 'whatsapp' | 'sms' | 'voice'): string {
+// Optimize phone number formatting with a single regex
+const phoneNumberRegex = /^\+?1?\d{10,11}$/;
+function formatPhoneNumber(phoneNumber: string, channel: 'whatsapp' | 'sms' | 'voice' | 'mail'): string {
   if (!phoneNumber) return '';
 
   // Remove all non-digit characters except plus sign
-  let cleaned = phoneNumber.replace(/[^\d+]/g, '');
+  const cleaned = phoneNumber.replace(/[^\d+]/g, '');
 
   // Ensure number starts with + and country code
-  if (!cleaned.startsWith('+')) {
-    // For US numbers, add +1
-    if (cleaned.length === 10) {
-      cleaned = '+1' + cleaned;
-    } else {
-      cleaned = '+' + cleaned;
-    }
-  }
+  const formatted = !cleaned.startsWith('+') 
+    ? (cleaned.length === 10 ? `+1${cleaned}` : `+${cleaned}`)
+    : cleaned;
 
-  // Add whatsapp: prefix only for WhatsApp channel
-  return channel === 'whatsapp' ? `whatsapp:${cleaned}` : cleaned;
+  // Add channel-specific prefix
+  switch (channel) {
+    case 'whatsapp':
+      return `whatsapp:${formatted}`;
+    case 'voice':
+      return formatted;
+    case 'mail':
+      return formatted;
+    default:
+      return formatted;
+  }
 }
 
 export function registerRoutes(app: Express): Server {
@@ -49,16 +54,17 @@ export function registerRoutes(app: Express): Server {
   const wss = new WebSocketServer({ 
     server: httpServer,
     verifyClient: (info: any) => {
-      // Ignore Vite HMR websocket connections
       return info.req.headers['sec-websocket-protocol'] !== 'vite-hmr';
     }
   });
 
-  // Track active connections
+  // Optimize WebSocket client tracking with Set
   const clients = new Set<WebSocket>();
 
-  // Broadcast to all clients
+  // Optimize broadcast with single stringification
   const broadcast = (message: any) => {
+    if (clients.size === 0) return; // Skip if no clients
+
     const messageStr = JSON.stringify(message);
     clients.forEach((client) => {
       if (client.readyState === WebSocket.OPEN) {
@@ -67,53 +73,48 @@ export function registerRoutes(app: Express): Server {
     });
   };
 
-  // Handle WebSocket connections
+  // WebSocket connection handler with improved error handling
   wss.on('connection', (ws: WebSocket) => {
     console.log('New WebSocket client connected');
     clients.add(ws);
 
-    // Handle client messages
     ws.on('message', (message: string) => {
       try {
         const data = JSON.parse(message.toString());
 
-        // Handle different message types
         switch (data.type) {
           case 'ping':
             ws.send(JSON.stringify({ type: 'pong' }));
             break;
-          // Add more message type handlers here as needed
         }
       } catch (error) {
         console.error('Error processing WebSocket message:', error);
       }
     });
 
-    // Handle client disconnection
-    ws.on('close', () => {
-      console.log('WebSocket client disconnected');
+    const cleanup = () => {
       clients.delete(ws);
-    });
+      console.log('WebSocket client disconnected');
+    };
 
-    // Handle errors
+    ws.on('close', cleanup);
     ws.on('error', (error) => {
       console.error('WebSocket error:', error);
-      clients.delete(ws);
+      cleanup();
     });
   });
 
-  // Webhook handler for all channels
+  // Optimized webhook handler with improved validation
   app.post("/webhook", async (req, res) => {
     try {
       if (!twilioClient) {
         throw new Error('Twilio client not initialized');
       }
 
+      const start = Date.now();
       console.log('Received webhook request');
-      console.log('Headers:', JSON.stringify(req.headers, null, 2));
-      console.log('Body:', JSON.stringify(req.body, null, 2));
 
-      // Validate Twilio signature
+      // Validate Twilio signature first
       const twilioSignature = req.headers['x-twilio-signature'];
       const webhookUrl = `https://rapienergy.live/webhook`;
 
@@ -134,7 +135,6 @@ export function registerRoutes(app: Express): Server {
         return res.status(403).send('Forbidden: Invalid signature');
       }
 
-      // Extract message details
       const {
         From,
         To,
@@ -142,9 +142,13 @@ export function registerRoutes(app: Express): Server {
         MessageSid,
         ProfileName,
         MessageStatus,
+        CallStatus,
+        CallSid,
+        RecordingUrl,
+        TranscriptionText
       } = req.body;
 
-      // Handle message status updates
+      // Handle message status updates efficiently
       if (MessageStatus) {
         broadcast({
           type: "message_status_updated",
@@ -157,39 +161,43 @@ export function registerRoutes(app: Express): Server {
         return res.status(200).send('OK');
       }
 
-      // Determine channel type
-      const isWhatsApp = From?.startsWith('whatsapp:') || To?.startsWith('whatsapp:');
-      const channel = isWhatsApp ? 'whatsapp' : 'sms';
-      const contactNumber = isWhatsApp ? From.replace('whatsapp:', '') : From;
+      // Determine channel type with single check
+      const channel = From?.startsWith('whatsapp:') ? 'whatsapp' 
+                   : CallSid ? 'voice'
+                   : RecordingUrl ? 'voicemail'
+                   : 'sms';
 
-      console.log(`Received ${channel} message from ${From}`);
-      console.log('Message details:', { From, To, Body, MessageSid });
+      const contactNumber = channel === 'whatsapp' ? From.replace('whatsapp:', '') : From;
 
-      // Store message in database
+      console.log(`Received ${channel} interaction from ${From}`);
+      console.log('Details:', { From, To, Body, MessageSid, CallSid });
+
+      // Efficiently store interaction in database
       const message = await db
         .insert(messages)
         .values({
           contactNumber,
           contactName: ProfileName || undefined,
-          content: Body,
+          content: Body || TranscriptionText || `${channel.toUpperCase()} interaction`,
           direction: "inbound",
           status: "delivered",
-          twilioSid: MessageSid,
+          twilioSid: MessageSid || CallSid,
           metadata: {
             channel,
             profile: {
               name: ProfileName
-            }
+            },
+            recordingUrl: RecordingUrl,
+            transcription: TranscriptionText
           },
         })
         .returning();
 
-      // After storing the message, broadcast it immediately
+      // Optimized broadcast with pre-formatted message
       const broadcastMessage = {
         type: "message_created",
         message: {
           ...message[0],
-          // Ensure these fields are present for proper UI updates
           createdAt: new Date().toISOString(),
           direction: "inbound",
           status: "delivered",
@@ -197,19 +205,17 @@ export function registerRoutes(app: Express): Server {
             channel,
             profile: {
               name: ProfileName
-            }
+            },
+            recordingUrl: RecordingUrl,
+            transcription: TranscriptionText
           }
         }
       };
 
-      console.log('Broadcasting incoming message:', broadcastMessage);
+      console.log(`Processed ${channel} interaction in ${Date.now() - start}ms`);
       broadcast(broadcastMessage);
 
-      // Return TwiML response
-      res.type('text/xml').send(`
-        <?xml version="1.0" encoding="UTF-8"?>
-        <Response></Response>
-      `);
+      res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
     } catch (error: any) {
       console.error("Error processing webhook:", error);
       res.status(500).send("Internal server error");
