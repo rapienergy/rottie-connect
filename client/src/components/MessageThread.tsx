@@ -11,10 +11,26 @@ interface MessageThreadProps {
   contactNumber: string;
 }
 
+interface MessageData {
+  messages: Array<{
+    id: string;
+    twilioSid: string;
+    direction: string;
+    content: string;
+    status: string;
+    createdAt: string;
+  }>;
+  stats: {
+    total: number;
+    sent: number;
+    received: number;
+  };
+}
+
 export function MessageThread({ contactNumber }: MessageThreadProps) {
   const { data, isLoading } = useMessages(contactNumber);
-  const messages = data?.messages || [];
-  const stats = data?.stats;
+  const messages = (data as MessageData)?.messages || [];
+  const stats = (data as MessageData)?.stats;
   const sendMessage = useSendMessage();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -60,7 +76,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
   };
 
   const formatDirection = (direction: string) => {
-    return direction.startsWith('outbound') ? 'rottie' : direction;
+    return direction === 'outbound-api' || direction === 'rottie' ? 'rottie' : direction;
   };
 
   // Group messages by date
@@ -105,7 +121,9 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
                     key={`${message.id}-${message.twilioSid}`}
                     className={cn(
                       "text-sm whitespace-pre-wrap",
-                      message.direction.startsWith('outbound') ? "text-blue-400" : "text-green-400"
+                      message.direction === 'rottie' || message.direction === 'outbound-api' 
+                        ? "text-blue-400" 
+                        : "text-green-400"
                     )}
                   >
                     {`${formatMessageTime(message.createdAt)} [${formatDirection(message.direction)}] ${message.content}`}

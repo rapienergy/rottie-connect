@@ -72,12 +72,12 @@ export function Dashboard() {
                         selectedNumber === conversation.contactNumber ? 'bg-zinc-900' : ''
                       }`}
                     >
-                      <div className={`text-sm ${isMain ? 'text-blue-400' : 'text-white'}`}>
+                      <div className="text-sm text-amber-400">
                         {conversation.contactNumber}
                       </div>
                       <div className="text-xs text-zinc-500">
                         {`${formatMessageTime(conversation.latestMessage.createdAt)} [${
-                          conversation.latestMessage.direction.startsWith('outbound') ? 'rottie' : conversation.latestMessage.direction
+                          conversation.latestMessage.direction === 'outbound-api' ? 'rottie' : conversation.latestMessage.direction
                         }]`}
                       </div>
                       <div className="text-sm text-zinc-400 truncate">
