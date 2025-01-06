@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Send } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { format, isToday, isYesterday } from "date-fns";
 
 interface MessageThreadProps {
   contactNumber: string;
@@ -45,18 +46,40 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
   };
 
   const formatMessageTime = (dateStr: string) => {
-    return new Date(dateStr).toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true
-    });
+    const date = new Date(dateStr);
+    return format(date, 'h:mm:ss a');
+  };
+
+  const formatMessageDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    if (isToday(date)) return 'Today';
+    if (isYesterday(date)) return 'Yesterday';
+    return format(date, 'MMM d, yyyy');
   };
 
   const formatDirection = (direction: string) => {
-    // Return 'rottie' for all outbound messages
     return direction.startsWith('outbound') ? 'rottie' : direction;
   };
+
+  // Group messages by date
+  const groupedMessages = messages?.reduce((groups: Record<string, any[]>, message) => {
+    const date = format(new Date(message.createdAt), 'yyyy-MM-dd');
+    if (!groups[date]) {
+      groups[date] = [];
+    }
+    groups[date].push(message);
+    return groups;
+  }, {}) || {};
+
+  // Calculate conversation stats
+  const stats = messages?.reduce((acc: { sent: number, received: number }, msg) => {
+    if (msg.direction.startsWith('outbound')) {
+      acc.sent++;
+    } else {
+      acc.received++;
+    }
+    return acc;
+  }, { sent: 0, received: 0 });
 
   return (
     <div className="h-full flex flex-col bg-black rounded-lg border border-zinc-800">
@@ -64,10 +87,12 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
         <h2 className="font-mono text-white">
           {messages?.[0]?.contactName || contactNumber}
         </h2>
-        <p className="font-mono text-sm text-zinc-400">WhatsApp Business</p>
+        <p className="font-mono text-sm text-zinc-400">
+          WhatsApp Business • {stats && `${stats.sent + stats.received} messages (${stats.sent} sent, ${stats.received} received)`}
+        </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-2 font-mono">
+      <div className="flex-1 overflow-y-auto p-4 space-y-6 font-mono">
         {isLoading ? (
           <div className="space-y-4">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -75,17 +100,26 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
             ))}
           </div>
         ) : (
-          <div className="space-y-2">
-            {messages?.map((message) => (
-              <div
-                key={`${message.id}-${message.twilioSid}`}
-                className={cn(
-                  "text-sm whitespace-pre-wrap font-mono",
-                  message.direction.startsWith('outbound') ? "text-blue-400" : "text-green-400"
-                )}
-              >
-                {`${formatMessageTime(message.createdAt)} [${formatDirection(message.direction)}] ${message.content}`}
-                <span className="text-zinc-500"> :: {message.status}</span>
+          <div className="space-y-6">
+            {Object.entries(groupedMessages).map(([date, dateMessages]) => (
+              <div key={date} className="space-y-2">
+                <div className="sticky top-0 bg-black/50 backdrop-blur-sm py-2">
+                  <div className="text-xs text-zinc-500 text-center">
+                    {formatMessageDate(date)}
+                  </div>
+                </div>
+                {dateMessages.map((message) => (
+                  <div
+                    key={`${message.id}-${message.twilioSid}`}
+                    className={cn(
+                      "text-sm whitespace-pre-wrap",
+                      message.direction.startsWith('outbound') ? "text-blue-400" : "text-green-400"
+                    )}
+                  >
+                    {`${formatMessageTime(message.createdAt)} [${formatDirection(message.direction)}] ${message.content}`}
+                    <span className="text-zinc-500"> :: {message.status}</span>
+                  </div>
+                ))}
               </div>
             ))}
             <div ref={messagesEndRef} />
