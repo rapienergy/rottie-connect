@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMessages, useSendMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, isToday, isYesterday } from "date-fns";
+import { MessageTimeline } from "./MessageTimeline";
 
 interface MessageThreadProps {
   contactNumber: string;
@@ -36,14 +37,25 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
   const sendMessage = useSendMessage();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [selectedMessageId, setSelectedMessageId] = useState<string | number | null>(null);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    const scrollToBottom = () => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    };
-    scrollToBottom();
-  }, [messages]);
+    if (!selectedMessageId) {
+      const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      };
+      scrollToBottom();
+    }
+  }, [messages, selectedMessageId]);
+
+  // Scroll to selected message
+  useEffect(() => {
+    if (selectedMessageId) {
+      const messageElement = document.getElementById(`message-${selectedMessageId}`);
+      messageElement?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [selectedMessageId]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -60,6 +72,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
       });
       form.reset();
       inputRef.current?.focus();
+      setSelectedMessageId(null); // Clear selection after sending
     } catch (error) {
       console.error('Failed to send message:', error);
     }
@@ -120,11 +133,14 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
                 </div>
                 {dateMessages.map((message) => (
                   <div
+                    id={`message-${message.id}`}
                     key={`${message.id}-${message.twilioSid}`}
                     className={cn(
-                      "text-sm whitespace-pre-wrap",
-                      message.direction.startsWith('outbound') ? "text-blue-400" : "text-green-400"
+                      "text-sm whitespace-pre-wrap p-2 rounded transition-colors",
+                      message.direction.startsWith('outbound') ? "text-blue-400" : "text-green-400",
+                      selectedMessageId === message.id && "bg-zinc-900/50"
                     )}
+                    onClick={() => setSelectedMessageId(message.id)}
                   >
                     {`${formatMessageTime(message.createdAt)} [${formatDirection(message.direction)}] ${message.content}`}
                     <span className="text-zinc-500"> :: {message.status}</span>
@@ -136,6 +152,13 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
           </div>
         )}
       </div>
+
+      {/* Timeline Component */}
+      <MessageTimeline 
+        messages={messages}
+        onSelectMessage={setSelectedMessageId}
+        selectedMessageId={selectedMessageId}
+      />
 
       <form onSubmit={handleSubmit} className="p-4 border-t border-zinc-800 flex gap-2">
         <Input
