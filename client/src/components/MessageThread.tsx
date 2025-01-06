@@ -53,6 +53,10 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     });
   };
 
+  const formatDirection = (direction: string) => {
+    return direction === 'outbound' ? 'rottie' : direction;
+  };
+
   const isFromMainNumber = (number: string) => number.endsWith('6311');
 
   return (
@@ -85,7 +89,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
                     isMain ? "text-red-400" : "text-green-400"
                   )}
                 >
-                  {`${formatMessageTime(message.createdAt)} [${message.direction}] ${message.content}`}
+                  {`${formatMessageTime(message.createdAt)} [${formatDirection(message.direction)}] ${message.content}`}
                   <span className="text-zinc-500"> :: {message.status}</span>
                 </div>
               );
