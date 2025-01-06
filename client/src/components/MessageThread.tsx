@@ -20,6 +20,10 @@ interface MessageResponse {
     direction: string;
     status: string;
     twilioSid?: string;
+    metadata?: {
+      channel?: string;
+      type?: 'text' | 'media' | 'voice';
+    };
     createdAt: string;
   }>;
   stats: {
@@ -80,12 +84,60 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
   };
 
   const formatDirection = (direction: string) => {
-    return direction.startsWith('outbound') ? 'rottie' : direction;
+    return direction.startsWith('outbound') ? 'rottie' : 'customer';
   };
 
   const formatInteractionTime = (dateStr?: string) => {
     if (!dateStr) return '';
     return formatDistanceToNow(new Date(dateStr), { addSuffix: true });
+  };
+
+  const getMessageColorClasses = (message: MessageResponse['messages'][0]) => {
+    // Base styles for all messages
+    const baseClasses = "text-sm whitespace-pre-wrap font-mono";
+
+    // Direction-based colors
+    const directionColor = message.direction.startsWith('outbound') 
+      ? "text-blue-400" // Rottie messages
+      : "text-green-400"; // Customer messages
+
+    // Status-based background highlights
+    let statusHighlight = "";
+    switch (message.status) {
+      case 'failed':
+        statusHighlight = "bg-red-900/20";
+        break;
+      case 'delivered':
+        statusHighlight = "bg-zinc-900/20";
+        break;
+      case 'sent':
+        statusHighlight = "bg-blue-900/20";
+        break;
+      default:
+        statusHighlight = "bg-zinc-900/10";
+    }
+
+    // Message type indicators
+    const typeStyle = message.metadata?.type === 'media' 
+      ? "italic"
+      : message.metadata?.type === 'voice' 
+        ? "font-bold" 
+        : "";
+
+    return cn(baseClasses, directionColor, statusHighlight, typeStyle);
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'delivered':
+        return "text-green-500";
+      case 'sent':
+        return "text-blue-500";
+      case 'failed':
+        return "text-red-500";
+      default:
+        return "text-zinc-500";
+    }
   };
 
   // Group messages by date with proper typing
@@ -118,7 +170,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
         </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-6 font-mono">
+      <div className="flex-1 overflow-y-auto p-4 space-y-6">
         {isLoading ? (
           <div className="space-y-4">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -137,13 +189,12 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
                 {dateMessages.map((message) => (
                   <div
                     key={`${message.id}-${message.twilioSid}`}
-                    className={cn(
-                      "text-sm whitespace-pre-wrap",
-                      message.direction === 'outbound' ? "text-blue-600" : "text-green-400"
-                    )}
+                    className={getMessageColorClasses(message)}
                   >
                     {`${formatMessageTime(message.createdAt)} [${formatDirection(message.direction)}] ${message.content}`}
-                    <span className="text-zinc-500"> :: {message.status}</span>
+                    <span className={cn("ml-2", getStatusColor(message.status))}>
+                      :: {message.status}
+                    </span>
                   </div>
                 ))}
               </div>
