@@ -254,7 +254,7 @@ export function registerRoutes(app: Express): Server {
         .values({
           contactNumber,
           content,
-          direction: "outbound",
+          direction: "rottie",
           status: twilioMessage.status,
           twilioSid: twilioMessage.sid,
           metadata: {

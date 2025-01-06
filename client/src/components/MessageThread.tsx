@@ -54,7 +54,8 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
   };
 
   const formatDirection = (direction: string) => {
-    return direction === 'outbound' ? 'rottie' : direction;
+    // Return 'rottie' for outbound messages, including 'outbound-api'
+    return direction.startsWith('outbound') ? 'rottie' : direction;
   };
 
   const isFromMainNumber = (number: string) => number.endsWith('6311');

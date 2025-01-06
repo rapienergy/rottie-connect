@@ -76,7 +76,9 @@ export function Dashboard() {
                         {conversation.contactNumber}
                       </div>
                       <div className="text-xs text-zinc-500">
-                        {`${formatMessageTime(conversation.latestMessage.createdAt)} [${conversation.latestMessage.direction}]`}
+                        {`${formatMessageTime(conversation.latestMessage.createdAt)} [${
+                          conversation.latestMessage.direction.startsWith('outbound') ? 'rottie' : conversation.latestMessage.direction
+                        }]`}
                       </div>
                       <div className="text-sm text-zinc-400 truncate">
                         {conversation.latestMessage.content}
