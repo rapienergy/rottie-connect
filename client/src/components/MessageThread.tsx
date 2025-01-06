@@ -60,8 +60,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
   };
 
   const formatDirection = (direction: string) => {
-    // Change outbound-api to rottie
-    return direction === 'outbound-api' || direction.startsWith('outbound') ? 'rottie' : direction;
+    return direction.startsWith('outbound') ? 'rottie' : direction;
   };
 
   // Group messages by date
@@ -106,7 +105,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
                     key={`${message.id}-${message.twilioSid}`}
                     className={cn(
                       "text-sm whitespace-pre-wrap",
-                      message.direction.startsWith('outbound') ? "text-yellow-400" : "text-green-400"
+                      message.direction.startsWith('outbound') ? "text-blue-400" : "text-green-400"
                     )}
                   >
                     {`${formatMessageTime(message.createdAt)} [${formatDirection(message.direction)}] ${message.content}`}
