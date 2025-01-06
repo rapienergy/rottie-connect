@@ -80,7 +80,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
   };
 
   const formatDirection = (direction: string) => {
-    return direction.startsWith('outbound') ? 'rottie' : direction;
+    return direction === 'rottie' || direction.startsWith('outbound') ? 'rottie' : direction;
   };
 
   const formatInteractionTime = (dateStr?: string) => {
@@ -139,7 +139,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
                     key={`${message.id}-${message.twilioSid}`}
                     className={cn(
                       "text-sm whitespace-pre-wrap",
-                      message.direction.startsWith('outbound') ? "text-blue-400" : "text-green-400"
+                      message.direction === 'rottie' || message.direction.startsWith('outbound') ? "text-blue-400" : "text-green-400"
                     )}
                   >
                     {`${formatMessageTime(message.createdAt)} [${formatDirection(message.direction)}] ${message.content}`}
