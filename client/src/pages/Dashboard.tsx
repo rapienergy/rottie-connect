@@ -22,9 +22,7 @@ export function Dashboard() {
     });
   };
 
-  const formatDirection = (direction: string) => {
-    return direction.includes('outbound') ? 'rottie' : direction;
-  };
+  const isFromMainNumber = (number: string) => number.endsWith('6311');
 
   return (
     <div className="container mx-auto px-4 py-6">
@@ -62,27 +60,32 @@ export function Dashboard() {
               </div>
             ) : (
               <div className="space-y-1">
-                {conversations?.filter(conv => conv.channel === 'whatsapp').map((conversation) => (
-                  <button
-                    key={conversation.contactNumber}
-                    onClick={() => setSelectedNumber(conversation.contactNumber)}
-                    className={`w-full p-3 rounded-md text-left font-mono hover:bg-zinc-900 transition-colors ${
-                      selectedNumber === conversation.contactNumber ? 'bg-zinc-900' : ''
-                    }`}
-                  >
-                    <div className="text-sm text-amber-400">
-                      {conversation.contactNumber}
-                    </div>
-                    <div className="text-xs text-zinc-500">
-                      {`${formatMessageTime(conversation.latestMessage.createdAt)} [${
-                        formatDirection(conversation.latestMessage.direction)
-                      }]`}
-                    </div>
-                    <div className="text-sm text-zinc-400 truncate">
-                      {conversation.latestMessage.content}
-                    </div>
-                  </button>
-                ))}
+                {conversations?.filter(conv => conv.channel === 'whatsapp').map((conversation) => {
+                  const fromNumber = conversation.contactNumber;
+                  const isMain = isFromMainNumber(fromNumber);
+
+                  return (
+                    <button
+                      key={conversation.contactNumber}
+                      onClick={() => setSelectedNumber(conversation.contactNumber)}
+                      className={`w-full p-3 rounded-md text-left font-mono hover:bg-zinc-900 transition-colors ${
+                        selectedNumber === conversation.contactNumber ? 'bg-zinc-900' : ''
+                      }`}
+                    >
+                      <div className={`text-sm ${isMain ? 'text-blue-400' : 'text-white'}`}>
+                        {conversation.contactNumber}
+                      </div>
+                      <div className="text-xs text-zinc-500">
+                        {`${formatMessageTime(conversation.latestMessage.createdAt)} [${
+                          conversation.latestMessage.direction.startsWith('outbound') ? 'rottie' : conversation.latestMessage.direction
+                        }]`}
+                      </div>
+                      <div className="text-sm text-zinc-400 truncate">
+                        {conversation.latestMessage.content}
+                      </div>
+                    </button>
+                  );
+                })}
 
                 {conversations?.length === 0 && (
                   <div className="text-center text-zinc-400 font-mono p-4">
