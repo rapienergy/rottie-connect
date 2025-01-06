@@ -11,10 +11,28 @@ interface MessageThreadProps {
   contactNumber: string;
 }
 
+interface MessageResponse {
+  messages: Array<{
+    id: string | number;
+    contactNumber: string;
+    contactName?: string | null;
+    content: string;
+    direction: string;
+    status: string;
+    twilioSid?: string;
+    createdAt: string;
+  }>;
+  stats: {
+    total: number;
+    sent: number;
+    received: number;
+  };
+}
+
 export function MessageThread({ contactNumber }: MessageThreadProps) {
   const { data, isLoading } = useMessages(contactNumber);
-  const messages = data?.messages || [];
-  const stats = data?.stats;
+  const messages = (data as MessageResponse)?.messages || [];
+  const stats = (data as MessageResponse)?.stats;
   const sendMessage = useSendMessage();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -63,8 +81,8 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     return direction.startsWith('outbound') ? 'rottie' : direction;
   };
 
-  // Group messages by date
-  const groupedMessages = messages.reduce((groups: Record<string, any[]>, message) => {
+  // Group messages by date with proper typing
+  const groupedMessages = messages.reduce<Record<string, typeof messages>>((groups, message) => {
     const date = format(new Date(message.createdAt), 'yyyy-MM-dd');
     if (!groups[date]) {
       groups[date] = [];
