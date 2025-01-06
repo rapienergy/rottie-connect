@@ -341,21 +341,26 @@ export function registerRoutes(app: Express): Server {
       }
 
       const { contactNumber } = req.params;
+      console.log(`Fetching all messages related to ${contactNumber}`);
 
-      // Fetch messages for both directions (to/from this contact)
+      // Fetch all messages from Twilio
       const messages = await twilioClient.messages.list({
-        limit: 100,
+        limit: 1000, // Increased limit to get more historical data
       });
 
       // Filter messages for this specific contact's conversation
+      // Include messages where this number appears in either to or from fields
       const contactMessages = messages.filter(msg => {
-        // Get clean numbers without whatsapp: prefix
+        // Get clean numbers without whatsapp: prefix for comparison
         const normalizedTo = msg.to?.replace('whatsapp:', '');
         const normalizedFrom = msg.from?.replace('whatsapp:', '');
+        const searchNumber = contactNumber.replace('whatsapp:', '');
 
         // Include messages where this contact is either sender or receiver
-        return normalizedTo === contactNumber || normalizedFrom === contactNumber;
+        return normalizedTo === searchNumber || normalizedFrom === searchNumber;
       });
+
+      console.log(`Found ${contactMessages.length} messages related to ${contactNumber}`);
 
       // Map and format messages
       const formattedMessages = contactMessages.map(msg => ({
@@ -376,13 +381,24 @@ export function registerRoutes(app: Express): Server {
         createdAt: msg.dateCreated
       }));
 
-      // Sort messages by date
+      // Sort messages chronologically
       formattedMessages.sort((a, b) => 
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       );
 
-      console.log(`Found ${formattedMessages.length} messages for contact ${contactNumber}`);
-      res.json(formattedMessages);
+      // Get conversation statistics
+      const stats = {
+        total: formattedMessages.length,
+        sent: formattedMessages.filter(m => m.direction.startsWith('outbound')).length,
+        received: formattedMessages.filter(m => m.direction === 'inbound').length
+      };
+
+      console.log(`Stats for ${contactNumber}:`, stats);
+
+      res.json({
+        messages: formattedMessages,
+        stats: stats
+      });
     } catch (error: any) {
       console.error("Error fetching messages:", error);
       res.status(500).json({ 

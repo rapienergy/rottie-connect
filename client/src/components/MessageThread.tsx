@@ -12,7 +12,9 @@ interface MessageThreadProps {
 }
 
 export function MessageThread({ contactNumber }: MessageThreadProps) {
-  const { data: messages, isLoading } = useMessages(contactNumber);
+  const { data, isLoading } = useMessages(contactNumber);
+  const messages = data?.messages || [];
+  const stats = data?.stats;
   const sendMessage = useSendMessage();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -62,33 +64,23 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
   };
 
   // Group messages by date
-  const groupedMessages = messages?.reduce((groups: Record<string, any[]>, message) => {
+  const groupedMessages = messages.reduce((groups: Record<string, any[]>, message) => {
     const date = format(new Date(message.createdAt), 'yyyy-MM-dd');
     if (!groups[date]) {
       groups[date] = [];
     }
     groups[date].push(message);
     return groups;
-  }, {}) || {};
-
-  // Calculate conversation stats
-  const stats = messages?.reduce((acc: { sent: number, received: number }, msg) => {
-    if (msg.direction.startsWith('outbound')) {
-      acc.sent++;
-    } else {
-      acc.received++;
-    }
-    return acc;
-  }, { sent: 0, received: 0 });
+  }, {});
 
   return (
     <div className="h-full flex flex-col bg-black rounded-lg border border-zinc-800">
       <div className="p-4 border-b border-zinc-800">
         <h2 className="font-mono text-white">
-          {messages?.[0]?.contactName || contactNumber}
+          {messages[0]?.contactName || contactNumber}
         </h2>
         <p className="font-mono text-sm text-zinc-400">
-          WhatsApp Business • {stats && `${stats.sent + stats.received} messages (${stats.sent} sent, ${stats.received} received)`}
+          WhatsApp Business • {stats && `${stats.total} messages (${stats.sent} sent, ${stats.received} received)`}
         </p>
       </div>
 
