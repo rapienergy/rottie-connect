@@ -141,7 +141,7 @@ export function registerRoutes(app: Express): Server {
         Body,
         MessageSid,
         ProfileName,
-        MessageStatus, // Added to handle status updates
+        MessageStatus,
       } = req.body;
 
       // Handle message status updates
@@ -184,11 +184,26 @@ export function registerRoutes(app: Express): Server {
         })
         .returning();
 
-      // After storing the message, broadcast it
-      broadcast({ 
-        type: "message_created", 
-        message: message[0] 
-      });
+      // After storing the message, broadcast it immediately
+      const broadcastMessage = {
+        type: "message_created",
+        message: {
+          ...message[0],
+          // Ensure these fields are present for proper UI updates
+          createdAt: new Date().toISOString(),
+          direction: "inbound",
+          status: "delivered",
+          metadata: {
+            channel,
+            profile: {
+              name: ProfileName
+            }
+          }
+        }
+      };
+
+      console.log('Broadcasting incoming message:', broadcastMessage);
+      broadcast(broadcastMessage);
 
       // Return TwiML response
       res.type('text/xml').send(`
