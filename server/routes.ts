@@ -32,7 +32,7 @@ function formatPhoneNumber(phoneNumber: string, channel: 'whatsapp' | 'sms' | 'v
   const cleaned = phoneNumber.replace(/[^\d+]/g, '');
 
   // Ensure number starts with + and country code
-  const formatted = !cleaned.startsWith('+') 
+  const formatted = !cleaned.startsWith('+')
     ? (cleaned.length === 10 ? `+1${cleaned}` : `+${cleaned}`)
     : cleaned;
 
@@ -51,7 +51,7 @@ function formatPhoneNumber(phoneNumber: string, channel: 'whatsapp' | 'sms' | 'v
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
-  const wss = new WebSocketServer({ 
+  const wss = new WebSocketServer({
     server: httpServer,
     verifyClient: (info: any) => {
       return info.req.headers['sec-websocket-protocol'] !== 'vite-hmr';
@@ -104,7 +104,7 @@ export function registerRoutes(app: Express): Server {
     });
   });
 
-  // Optimized webhook handler with improved validation
+  // Optimized webhook handler with improved validation and testing support
   app.post("/webhook", async (req, res) => {
     try {
       if (!twilioClient) {
@@ -113,26 +113,32 @@ export function registerRoutes(app: Express): Server {
 
       const start = Date.now();
       console.log('Received webhook request');
+      console.log('Webhook payload:', JSON.stringify(req.body, null, 2));
 
-      // Validate Twilio signature first
-      const twilioSignature = req.headers['x-twilio-signature'];
-      const webhookUrl = `https://rapienergy.live/webhook`;
+      // Always skip signature validation during local development
+      const isDevEnvironment = app.get('env') === 'development';
+      console.log('Environment:', app.get('env'), 'Development mode:', isDevEnvironment);
 
-      if (!twilioSignature || !process.env.TWILIO_AUTH_TOKEN) {
-        console.error('Missing Twilio signature or auth token');
-        return res.status(403).send('Forbidden: Missing signature or auth token');
-      }
+      if (!isDevEnvironment) {
+        const twilioSignature = req.headers['x-twilio-signature'];
+        const webhookUrl = `${process.env.BASE_URL || 'http://localhost:5000'}/webhook`;
 
-      const isValid = twilio.validateRequest(
-        process.env.TWILIO_AUTH_TOKEN,
-        twilioSignature as string,
-        webhookUrl,
-        req.body
-      );
+        if (!twilioSignature || !process.env.TWILIO_AUTH_TOKEN) {
+          console.error('Missing Twilio signature or auth token');
+          return res.status(403).send('Forbidden: Missing signature or auth token');
+        }
 
-      if (!isValid) {
-        console.error('Invalid Twilio signature');
-        return res.status(403).send('Forbidden: Invalid signature');
+        const isValid = twilio.validateRequest(
+          process.env.TWILIO_AUTH_TOKEN,
+          twilioSignature as string,
+          webhookUrl,
+          req.body
+        );
+
+        if (!isValid) {
+          console.error('Invalid Twilio signature');
+          return res.status(403).send('Forbidden: Invalid signature');
+        }
       }
 
       const {
@@ -145,8 +151,61 @@ export function registerRoutes(app: Express): Server {
         CallStatus,
         CallSid,
         RecordingUrl,
-        TranscriptionText
+        TranscriptionText,
+        CallDuration,
+        Direction,
+        ForwardedFrom,
+        AccountSid,
+        ApiVersion
       } = req.body;
+
+      // Enhanced logging for call events
+      if (CallSid) {
+        console.log('\n=== WhatsApp Call Event ===');
+        console.log('Call SID:', CallSid);
+        console.log('Status:', CallStatus);
+        console.log('From:', From);
+        console.log('To:', To);
+        console.log('Duration:', CallDuration);
+        console.log('Direction:', Direction);
+        if (ForwardedFrom) console.log('Forwarded From:', ForwardedFrom);
+        console.log('==========================\n');
+
+        try {
+          // Store call event in database
+          const message = await db
+            .insert(messages)
+            .values({
+              contactNumber: From?.replace('whatsapp:', '') || '',
+              content: `WhatsApp Call - ${CallStatus}`,
+              direction: Direction || "inbound",
+              status: CallStatus || 'unknown',
+              twilioSid: CallSid,
+              metadata: {
+                channel: 'voice',
+                callDuration: parseInt(CallDuration || '0'),
+                recordingUrl: RecordingUrl,
+                transcription: TranscriptionText
+              },
+            })
+            .returning();
+
+          // Broadcast call event to connected clients
+          broadcast({
+            type: "call_event",
+            call: {
+              ...message[0],
+              createdAt: new Date().toISOString()
+            }
+          });
+
+          console.log(`Processed WhatsApp call event in ${Date.now() - start}ms`);
+        } catch (err) {
+          console.error('Failed to process call event:', err);
+        }
+
+        return res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+      }
 
       // Handle message status updates efficiently
       if (MessageStatus) {
@@ -162,10 +221,9 @@ export function registerRoutes(app: Express): Server {
       }
 
       // Determine channel type with single check
-      const channel = From?.startsWith('whatsapp:') ? 'whatsapp' 
-                   : CallSid ? 'voice'
-                   : RecordingUrl ? 'voicemail'
-                   : 'sms';
+      const channel = From?.startsWith('whatsapp:') ? 'whatsapp'
+        : CallSid ? 'voice'
+          : 'sms';
 
       const contactNumber = channel === 'whatsapp' ? From.replace('whatsapp:', '') : From;
 
@@ -270,9 +328,9 @@ export function registerRoutes(app: Express): Server {
         .returning();
 
       // Broadcast the new message to all connected clients
-      broadcast({ 
-        type: "message_created", 
-        message: message[0] 
+      broadcast({
+        type: "message_created",
+        message: message[0]
       });
 
       res.json(message[0]);
@@ -303,7 +361,7 @@ export function registerRoutes(app: Express): Server {
       const conversations = twilioMessages.reduce((acc: any, msg: any) => {
         const isWhatsApp = msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:');
         const channel = isWhatsApp ? 'whatsapp' : 'sms';
-        const contactNumber = (isWhatsApp ? 
+        const contactNumber = (isWhatsApp ?
           (msg.to?.startsWith('whatsapp:') ? msg.from : msg.to)?.replace('whatsapp:', '') :
           (msg.direction === 'inbound' ? msg.from : msg.to));
 
@@ -332,7 +390,7 @@ export function registerRoutes(app: Express): Server {
       res.json(Object.values(conversations));
     } catch (error: any) {
       console.error("Error fetching conversations:", error);
-      res.status(500).json({ 
+      res.status(500).json({
         message: "Failed to fetch conversations",
         error: error.message
       });
@@ -379,7 +437,7 @@ export function registerRoutes(app: Express): Server {
       // Map Twilio messages to our format
       const formattedTwilioMessages = contactMessages.map(msg => ({
         id: msg.sid,
-        contactNumber: msg.direction === 'inbound' ? 
+        contactNumber: msg.direction === 'inbound' ?
           msg.from?.replace('whatsapp:', '') :
           msg.to?.replace('whatsapp:', ''),
         content: msg.body || '',
@@ -402,7 +460,7 @@ export function registerRoutes(app: Express): Server {
       );
 
       // Sort messages chronologically
-      uniqueMessages.sort((a, b) => 
+      uniqueMessages.sort((a, b) =>
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       );
 
@@ -423,7 +481,7 @@ export function registerRoutes(app: Express): Server {
       });
     } catch (error: any) {
       console.error("Error fetching messages:", error);
-      res.status(500).json({ 
+      res.status(500).json({
         message: "Failed to fetch messages",
         error: error.message
       });
