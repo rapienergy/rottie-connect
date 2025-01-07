@@ -3,7 +3,7 @@ import { useMessages, useSendMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Send } from "lucide-react";
+import { Send, Phone, PhoneOff, PhoneCall } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
 
@@ -21,6 +21,12 @@ interface MessageResponse {
     status: string;
     twilioSid?: string;
     createdAt: string;
+    metadata?: {
+      channel: 'whatsapp' | 'sms' | 'voice' | 'mail';
+      callDuration?: number;
+      recordingUrl?: string;
+      transcription?: string;
+    };
   }>;
   stats: {
     total: number;
@@ -92,6 +98,28 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     return formatDistanceToNow(new Date(dateStr), { addSuffix: true });
   };
 
+  const formatCallDuration = (seconds?: number) => {
+    if (!seconds) return '0s';
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return minutes > 0 
+      ? `${minutes}m ${remainingSeconds}s`
+      : `${remainingSeconds}s`;
+  };
+
+  const getCallIcon = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'completed':
+        return <Phone className="h-4 w-4 text-green-400" />;
+      case 'failed':
+      case 'busy':
+      case 'no-answer':
+        return <PhoneOff className="h-4 w-4 text-red-400" />;
+      default:
+        return <PhoneCall className="h-4 w-4 text-yellow-400" />;
+    }
+  };
+
   // Group messages by date with proper typing
   const groupedMessages = messages.reduce<Record<string, typeof messages>>((groups, message) => {
     const date = format(new Date(message.createdAt), 'yyyy-MM-dd');
@@ -143,10 +171,40 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
                     key={`${message.id}-${message.twilioSid}`}
                     className={cn(
                       "text-sm whitespace-pre-wrap",
+                      message.metadata?.channel === 'voice' 
+                        ? "flex items-center gap-2" 
+                        : "",
                       isRottieMessage(message.direction) ? "text-blue-400" : "text-green-400"
                     )}
                   >
-                    {`${formatMessageTime(message.createdAt)} [${formatDirection(message.direction)}] ${message.content}`}
+                    {message.metadata?.channel === 'voice' ? (
+                      <>
+                        {getCallIcon(message.status)}
+                        <span>
+                          {`${formatMessageTime(message.createdAt)} [${formatDirection(message.direction)}] Voice Call - ${message.status}`}
+                          {message.metadata.callDuration && (
+                            <span className="text-zinc-500"> • Duration: {formatCallDuration(message.metadata.callDuration)}</span>
+                          )}
+                          {message.metadata.recordingUrl && (
+                            <a 
+                              href={message.metadata.recordingUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="ml-2 text-blue-500 hover:underline"
+                            >
+                              Recording
+                            </a>
+                          )}
+                          {message.metadata.transcription && (
+                            <div className="mt-1 text-zinc-400 text-xs">
+                              Transcription: {message.metadata.transcription}
+                            </div>
+                          )}
+                        </span>
+                      </>
+                    ) : (
+                      `${formatMessageTime(message.createdAt)} [${formatDirection(message.direction)}] ${message.content}`
+                    )}
                     <span className="text-zinc-500"> :: {message.status}</span>
                   </div>
                 ))}
