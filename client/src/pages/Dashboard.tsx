@@ -2,9 +2,11 @@ import { useState } from "react";
 import { useConversations } from "@/lib/api";
 import { MessageThread } from "@/components/MessageThread";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MessageSquare, AlertCircle } from "lucide-react";
+import { MessageSquare, AlertCircle, Phone } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { toast } from "@/hooks/use-toast";
 
 export function Dashboard() {
   const [selectedNumber, setSelectedNumber] = useState<string | null>(null);
@@ -13,6 +15,35 @@ export function Dashboard() {
     queryKey: ["/api/twilio/status"],
     refetchInterval: 30000, // Check connection every 30 seconds
   });
+
+  const initiateVoiceCall = async (contactNumber: string) => {
+    try {
+      const response = await fetch('/api/voice/calls', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ contactNumber }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: "Call initiated",
+          description: `Calling ${contactNumber}...`,
+        });
+      } else {
+        throw new Error(data.message || 'Failed to initiate call');
+      }
+    } catch (error: any) {
+      toast({
+        title: "Call failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
 
   const formatMessageTime = (dateStr: string) => {
     return new Date(dateStr).toLocaleTimeString('en-US', {
@@ -66,29 +97,39 @@ export function Dashboard() {
             ) : (
               <div className="space-y-1">
                 {conversations?.filter(conv => conv.channel === 'whatsapp').map((conversation) => (
-                  <button
-                    key={conversation.contactNumber}
-                    onClick={() => setSelectedNumber(conversation.contactNumber)}
-                    className={cn(
-                      "w-full p-3 rounded-md text-left font-mono hover:bg-zinc-900 transition-colors",
-                      selectedNumber === conversation.contactNumber ? 'bg-zinc-900' : ''
-                    )}
-                  >
-                    <div className="text-sm text-white">
-                      {conversation.contactNumber}
-                    </div>
-                    <div className="text-xs text-zinc-500">
-                      {`${formatMessageTime(conversation.latestMessage.createdAt)} [${
-                        formatDirection(conversation.latestMessage.direction)
-                      }]`}
-                    </div>
-                    <div className={cn(
-                      "text-sm truncate",
-                      isRottieMessage(conversation.latestMessage.direction) ? "text-blue-400" : "text-zinc-400"
-                    )}>
-                      {conversation.latestMessage.content}
-                    </div>
-                  </button>
+                  <div key={conversation.contactNumber} className="flex flex-col gap-2">
+                    <button
+                      onClick={() => setSelectedNumber(conversation.contactNumber)}
+                      className={cn(
+                        "w-full p-3 rounded-md text-left font-mono hover:bg-zinc-900 transition-colors",
+                        selectedNumber === conversation.contactNumber ? 'bg-zinc-900' : ''
+                      )}
+                    >
+                      <div className="text-sm text-white">
+                        {conversation.contactNumber}
+                      </div>
+                      <div className="text-xs text-zinc-500">
+                        {`${formatMessageTime(conversation.latestMessage.createdAt)} [${
+                          formatDirection(conversation.latestMessage.direction)
+                        }]`}
+                      </div>
+                      <div className={cn(
+                        "text-sm truncate",
+                        isRottieMessage(conversation.latestMessage.direction) ? "text-blue-400" : "text-zinc-400"
+                      )}>
+                        {conversation.latestMessage.content}
+                      </div>
+                    </button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full bg-zinc-900 hover:bg-zinc-800 border-zinc-700"
+                      onClick={() => initiateVoiceCall(conversation.contactNumber)}
+                    >
+                      <Phone className="w-4 h-4 mr-2" />
+                      Call as Landline
+                    </Button>
+                  </div>
                 ))}
 
                 {conversations?.length === 0 && (
