@@ -18,6 +18,11 @@ export function Dashboard() {
 
   const initiateVoiceCall = async (contactNumber: string) => {
     try {
+      toast({
+        title: "Initiating call",
+        description: `Connecting to ${contactNumber}...`,
+      });
+
       const response = await fetch('/api/voice/calls', {
         method: 'POST',
         headers: {
@@ -31,12 +36,13 @@ export function Dashboard() {
       if (response.ok) {
         toast({
           title: "Call initiated",
-          description: `Calling ${contactNumber}...`,
+          description: `Call status: ${data.callDetails.status}. SID: ${data.callDetails.sid}`,
         });
       } else {
         throw new Error(data.message || 'Failed to initiate call');
       }
     } catch (error: any) {
+      console.error('Voice call error:', error);
       toast({
         title: "Call failed",
         description: error.message,

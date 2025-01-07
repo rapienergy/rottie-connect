@@ -23,6 +23,7 @@ try {
   console.error('Failed to initialize Twilio client:', error);
 }
 
+// Update formatVoiceNumber function for better number formatting
 function formatVoiceNumber(phone: string): string {
   // Remove all non-digit characters except plus sign
   const cleaned = phone.replace(/[^\d+]/g, '');
