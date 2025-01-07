@@ -169,6 +169,10 @@ export function registerRoutes(app: Express): Server {
         console.log('Duration:', CallDuration);
         console.log('Direction:', Direction);
         if (ForwardedFrom) console.log('Forwarded From:', ForwardedFrom);
+        if (RecordingUrl) console.log('Recording URL:', RecordingUrl);
+        if (TranscriptionText) console.log('Transcription:', TranscriptionText);
+        console.log('API Version:', ApiVersion);
+        console.log('Account SID:', AccountSid);
         console.log('==========================\n');
 
         try {
@@ -177,7 +181,7 @@ export function registerRoutes(app: Express): Server {
             .insert(messages)
             .values({
               contactNumber: From?.replace('whatsapp:', '') || '',
-              content: `WhatsApp Call - ${CallStatus}`,
+              content: `WhatsApp Call - ${CallStatus} - Duration: ${CallDuration || 0}s`,
               direction: Direction || "inbound",
               status: CallStatus || 'unknown',
               twilioSid: CallSid,
@@ -185,7 +189,10 @@ export function registerRoutes(app: Express): Server {
                 channel: 'voice',
                 callDuration: parseInt(CallDuration || '0'),
                 recordingUrl: RecordingUrl,
-                transcription: TranscriptionText
+                transcription: TranscriptionText,
+                profile: {
+                  name: ProfileName
+                }
               },
             })
             .returning();
@@ -200,11 +207,17 @@ export function registerRoutes(app: Express): Server {
           });
 
           console.log(`Processed WhatsApp call event in ${Date.now() - start}ms`);
+          console.log('Call details stored:', message[0]);
         } catch (err) {
           console.error('Failed to process call event:', err);
         }
 
-        return res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+        // Return TwiML response for calls
+        return res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Thank you for calling. This is a test call handler.</Say>
+    <Record action="/webhook" method="POST"/>
+</Response>`);
       }
 
       // Handle message status updates efficiently
