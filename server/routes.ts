@@ -357,6 +357,75 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Initiate WhatsApp call
+  app.post("/api/calls", async (req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      const { contactNumber } = req.body;
+      if (!contactNumber) {
+        throw new Error('Contact number is required');
+      }
+
+      console.log('\n=== Initiating WhatsApp Call ===');
+      console.log('To:', contactNumber);
+      console.log('Using Twilio number:', process.env.TWILIO_PHONE_NUMBER);
+
+      // Ensure we have the required environment variables
+      if (!process.env.TWILIO_PHONE_NUMBER) {
+        throw new Error('TWILIO_PHONE_NUMBER environment variable is not set');
+      }
+
+      const call = await twilioClient.calls.create({
+        url: `${process.env.BASE_URL || 'http://localhost:5000'}/webhook`,
+        to: `whatsapp:${contactNumber}`,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        statusCallback: `${process.env.BASE_URL || 'http://localhost:5000'}/webhook`,
+        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+        record: true
+      });
+
+      console.log('Call initiated:', call.sid);
+      console.log('Call status:', call.status);
+      console.log('Call direction:', call.direction);
+      console.log('Call from:', call.from);
+      console.log('Call to:', call.to);
+      console.log('==========================\n');
+
+      res.json({
+        status: 'success',
+        callDetails: {
+          sid: call.sid,
+          status: call.status,
+          direction: call.direction,
+          from: call.from,
+          to: call.to
+        }
+      });
+    } catch (error: any) {
+      console.error("Error initiating call:", error);
+      console.error("Error details:", {
+        code: error.code,
+        status: error.status,
+        moreInfo: error.moreInfo,
+        details: error.details
+      });
+
+      res.status(500).json({
+        status: 'error',
+        message: error.message,
+        code: error.code || 'CALL_INITIATION_ERROR',
+        details: {
+          status: error.status,
+          moreInfo: error.moreInfo
+        }
+      });
+    }
+  });
+
+
   // Get all conversations across channels
   app.get("/api/conversations", async (_req, res) => {
     try {
