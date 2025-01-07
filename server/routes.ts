@@ -23,30 +23,29 @@ try {
   console.error('Failed to initialize Twilio client:', error);
 }
 
-// Optimize phone number formatting with a single regex
-const phoneNumberRegex = /^\+?1?\d{10,11}$/;
-function formatPhoneNumber(phoneNumber: string, channel: 'whatsapp' | 'sms' | 'voice' | 'mail'): string {
-  if (!phoneNumber) return '';
-
+function formatVoiceNumber(phone: string): string {
   // Remove all non-digit characters except plus sign
-  const cleaned = phoneNumber.replace(/[^\d+]/g, '');
+  const cleaned = phone.replace(/[^\d+]/g, '');
 
   // Ensure number starts with + and country code
-  const formatted = !cleaned.startsWith('+')
-    ? (cleaned.length === 10 ? `+1${cleaned}` : `+${cleaned}`)
-    : cleaned;
-
-  // Add channel-specific prefix
-  switch (channel) {
-    case 'whatsapp':
-      return `whatsapp:${formatted}`;
-    case 'voice':
-      return formatted;
-    case 'mail':
-      return formatted;
-    default:
-      return formatted;
+  if (!cleaned.startsWith('+')) {
+    return cleaned.length === 10 ? `+1${cleaned}` : `+${cleaned}`;
   }
+  return cleaned;
+}
+
+function validateWhatsAppNumber(phone: string): boolean {
+  const cleaned = phone.replace(/[^\d+]/g, '');
+  return /^\+[1-9]\d{1,14}$/.test(cleaned);
+}
+
+function formatWhatsAppNumber(phoneNumber: string): string {
+  if (!phoneNumber) return '';
+  const formatted = formatVoiceNumber(phoneNumber);
+  if (!validateWhatsAppNumber(formatted)) {
+    throw new Error(`Invalid WhatsApp number format: ${formatted}`);
+  }
+  return `whatsapp:${formatted}`;
 }
 
 export function registerRoutes(app: Express): Server {
@@ -211,7 +210,6 @@ export function registerRoutes(app: Express): Server {
         } catch (err) {
           console.error('Failed to process call event:', err);
         }
-
         // Return TwiML response for calls
         return res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -324,7 +322,7 @@ export function registerRoutes(app: Express): Server {
       }
 
       // Format the destination number based on channel
-      const toNumber = formatPhoneNumber(contactNumber, channel);
+      const toNumber = formatWhatsAppNumber(contactNumber);
 
       console.log('Sending message via Messaging Service:');
       console.log('Channel:', channel);
@@ -374,7 +372,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Initiate WhatsApp call
+  // Update the call creation endpoint for voice calls only
   app.post("/api/calls", async (req, res) => {
     try {
       if (!twilioClient) {
@@ -386,7 +384,7 @@ export function registerRoutes(app: Express): Server {
         throw new Error('Contact number is required');
       }
 
-      console.log('\n=== Initiating WhatsApp Call ===');
+      console.log('\n=== Initiating Voice Call ===');
       console.log('To:', contactNumber);
       console.log('Using Twilio number:', process.env.TWILIO_PHONE_NUMBER);
 
@@ -395,11 +393,20 @@ export function registerRoutes(app: Express): Server {
         throw new Error('TWILIO_PHONE_NUMBER environment variable is not set');
       }
 
+      // Format numbers for voice call
+      const toNumber = formatVoiceNumber(contactNumber);
+      const fromNumber = process.env.TWILIO_PHONE_NUMBER; // Use raw Twilio number for voice calls
+
+      // Use BASE_URL for webhooks
+      const webhookUrl = `${process.env.BASE_URL}/webhook`;
+      console.log('Using webhook URL:', webhookUrl);
+
+      // Initiate voice call
       const call = await twilioClient.calls.create({
-        url: `${process.env.BASE_URL || 'http://localhost:5000'}/webhook`,
-        to: `whatsapp:${contactNumber}`,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        statusCallback: `${process.env.BASE_URL || 'http://localhost:5000'}/webhook`,
+        url: webhookUrl,
+        to: toNumber,
+        from: fromNumber,
+        statusCallback: webhookUrl,
         statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
         record: true
       });
