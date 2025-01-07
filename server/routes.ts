@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { db } from "@db";
 import { messages } from "@db/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import twilio from "twilio";
 import type { Twilio } from "twilio";
 
@@ -27,29 +27,110 @@ function formatVoiceNumber(phone: string): string {
   // Remove all non-digit characters except plus sign
   const cleaned = phone.replace(/[^\d+]/g, '');
 
-  // Ensure number starts with + and country code
-  if (!cleaned.startsWith('+')) {
-    return cleaned.length === 10 ? `+1${cleaned}` : `+${cleaned}`;
+  // Handle Mexican numbers
+  if (cleaned.startsWith('52') && cleaned.length === 12) {
+    return '+' + cleaned;
   }
-  return cleaned;
-}
 
-function validateWhatsAppNumber(phone: string): boolean {
-  const cleaned = phone.replace(/[^\d+]/g, '');
-  return /^\+[1-9]\d{1,14}$/.test(cleaned);
-}
-
-function formatWhatsAppNumber(phoneNumber: string): string {
-  if (!phoneNumber) return '';
-  const formatted = formatVoiceNumber(phoneNumber);
-  if (!validateWhatsAppNumber(formatted)) {
-    throw new Error(`Invalid WhatsApp number format: ${formatted}`);
+  // Add Mexico country code for 10-digit numbers
+  if (cleaned.length === 10) {
+    return '+52' + cleaned;
   }
-  return `whatsapp:${formatted}`;
+
+  // If already has plus and proper length, return as is
+  if (cleaned.startsWith('+') && cleaned.length >= 12) {
+    return cleaned;
+  }
+
+  // Default: add +52 if no country code
+  return cleaned.startsWith('+') ? cleaned : '+52' + cleaned;
 }
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
+
+  // Add the voice call endpoint before any other routes
+  app.post("/api/voice/calls", async (req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      const { contactNumber } = req.body;
+      if (!contactNumber) {
+        throw new Error('Contact number is required');
+      }
+
+      console.log('\n=== Initiating Voice Call ===');
+      console.log('To:', contactNumber);
+      console.log('Using Twilio number:', process.env.TWILIO_PHONE_NUMBER);
+
+      // Ensure we have the required environment variables
+      if (!process.env.TWILIO_PHONE_NUMBER) {
+        throw new Error('TWILIO_PHONE_NUMBER environment variable is not set');
+      }
+
+      // Format numbers for voice calls
+      let toNumber = formatVoiceNumber(contactNumber);
+      console.log('Formatted number:', toNumber);
+
+      // Initiate the voice call with direct TwiML
+      const call = await twilioClient.calls.create({
+        to: toNumber,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        twiml: `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="alice" language="es-MX">
+        Gracias por contestar. Esta es una llamada de prueba de Rottie Connect.
+    </Say>
+    <Play digits="1234"></Play>
+    <Pause length="1"/>
+    <Say voice="alice" language="es-MX">
+        Fin de la llamada de prueba. Gracias.
+    </Say>
+</Response>`,
+        statusCallback: `${process.env.BASE_URL}/webhook`,
+        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+        record: true
+      });
+
+      console.log('Call initiated:', call.sid);
+      console.log('Call status:', call.status);
+      console.log('Call direction:', call.direction);
+      console.log('Call from:', call.from);
+      console.log('Call to:', call.to);
+      console.log('==========================\n');
+
+      res.json({
+        status: 'success',
+        callDetails: {
+          sid: call.sid,
+          status: call.status,
+          direction: call.direction,
+          from: call.from,
+          to: call.to
+        }
+      });
+    } catch (error: any) {
+      console.error("Error initiating call:", error);
+      console.error("Error details:", {
+        code: error.code,
+        status: error.status,
+        moreInfo: error.moreInfo,
+        details: error.details
+      });
+
+      res.status(500).json({
+        status: 'error',
+        message: error.message,
+        code: error.code || 'CALL_INITIATION_ERROR',
+        details: {
+          status: error.status,
+          moreInfo: error.moreInfo
+        }
+      });
+    }
+  });
   const wss = new WebSocketServer({
     server: httpServer,
     verifyClient: (info: any) => {
@@ -160,7 +241,7 @@ export function registerRoutes(app: Express): Server {
 
       // Enhanced logging for call events
       if (CallSid) {
-        console.log('\n=== WhatsApp Call Event ===');
+        console.log('\n=== Voice Call Event ===');
         console.log('Call SID:', CallSid);
         console.log('Status:', CallStatus);
         console.log('From:', From);
@@ -180,7 +261,7 @@ export function registerRoutes(app: Express): Server {
             .insert(messages)
             .values({
               contactNumber: From?.replace('whatsapp:', '') || '',
-              content: `WhatsApp Call - ${CallStatus} - Duration: ${CallDuration || 0}s`,
+              content: `Voice Call - ${CallStatus} - Duration: ${CallDuration || 0}s`,
               direction: Direction || "inbound",
               status: CallStatus || 'unknown',
               twilioSid: CallSid,
@@ -205,7 +286,7 @@ export function registerRoutes(app: Express): Server {
             }
           });
 
-          console.log(`Processed WhatsApp call event in ${Date.now() - start}ms`);
+          console.log(`Processed Voice call event in ${Date.now() - start}ms`);
           console.log('Call details stored:', message[0]);
         } catch (err) {
           console.error('Failed to process call event:', err);
@@ -214,23 +295,12 @@ export function registerRoutes(app: Express): Server {
         return res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say voice="alice" language="es-MX">
-        Gracias por llamar a Rottie Connect. Esta es una llamada de prueba.
+        Gracias por contestar. Esta es una llamada de prueba de Rottie Connect.
     </Say>
     <Play digits="1234"></Play>
     <Pause length="1"/>
     <Say voice="alice" language="es-MX">
-        Grabando mensaje de prueba.
-    </Say>
-    <Record 
-        action="/webhook"
-        method="POST"
-        maxLength="30"
-        playBeep="true"
-        recordingStatusCallback="/webhook"
-        recordingStatusCallbackEvent="in-progress completed absent"
-    />
-    <Say voice="alice" language="es-MX">
-        Gracias por su mensaje. Fin de la llamada.
+        Fin de la llamada de prueba. Gracias.
     </Say>
 </Response>`);
       }
@@ -372,82 +442,8 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Update the call creation endpoint for voice calls only
-  app.post("/api/calls", async (req, res) => {
-    try {
-      if (!twilioClient) {
-        throw new Error('Twilio client not initialized');
-      }
 
-      const { contactNumber } = req.body;
-      if (!contactNumber) {
-        throw new Error('Contact number is required');
-      }
-
-      console.log('\n=== Initiating Voice Call ===');
-      console.log('To:', contactNumber);
-      console.log('Using Twilio number:', process.env.TWILIO_PHONE_NUMBER);
-
-      // Ensure we have the required environment variables
-      if (!process.env.TWILIO_PHONE_NUMBER) {
-        throw new Error('TWILIO_PHONE_NUMBER environment variable is not set');
-      }
-
-      // Format numbers for voice call
-      const toNumber = formatVoiceNumber(contactNumber);
-      const fromNumber = process.env.TWILIO_PHONE_NUMBER; // Use raw Twilio number for voice calls
-
-      // Use BASE_URL for webhooks
-      const webhookUrl = `${process.env.BASE_URL}/webhook`;
-      console.log('Using webhook URL:', webhookUrl);
-
-      // Initiate voice call
-      const call = await twilioClient.calls.create({
-        url: webhookUrl,
-        to: toNumber,
-        from: fromNumber,
-        statusCallback: webhookUrl,
-        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
-        record: true
-      });
-
-      console.log('Call initiated:', call.sid);
-      console.log('Call status:', call.status);
-      console.log('Call direction:', call.direction);
-      console.log('Call from:', call.from);
-      console.log('Call to:', call.to);
-      console.log('==========================\n');
-
-      res.json({
-        status: 'success',
-        callDetails: {
-          sid: call.sid,
-          status: call.status,
-          direction: call.direction,
-          from: call.from,
-          to: call.to
-        }
-      });
-    } catch (error: any) {
-      console.error("Error initiating call:", error);
-      console.error("Error details:", {
-        code: error.code,
-        status: error.status,
-        moreInfo: error.moreInfo,
-        details: error.details
-      });
-
-      res.status(500).json({
-        status: 'error',
-        message: error.message,
-        code: error.code || 'CALL_INITIATION_ERROR',
-        details: {
-          status: error.status,
-          moreInfo: error.moreInfo
-        }
-      });
-    }
-  });
+  // Dedicated voice call endpoint for landline calls (This part is already moved to the top)
 
 
   // Get all conversations across channels
