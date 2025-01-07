@@ -215,8 +215,25 @@ export function registerRoutes(app: Express): Server {
         // Return TwiML response for calls
         return res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>Thank you for calling. This is a test call handler.</Say>
-    <Record action="/webhook" method="POST"/>
+    <Say voice="alice" language="es-MX">
+        Gracias por llamar a Rottie Connect. Esta es una llamada de prueba.
+    </Say>
+    <Play digits="1234"></Play>
+    <Pause length="1"/>
+    <Say voice="alice" language="es-MX">
+        Grabando mensaje de prueba.
+    </Say>
+    <Record 
+        action="/webhook"
+        method="POST"
+        maxLength="30"
+        playBeep="true"
+        recordingStatusCallback="/webhook"
+        recordingStatusCallbackEvent="in-progress completed absent"
+    />
+    <Say voice="alice" language="es-MX">
+        Gracias por su mensaje. Fin de la llamada.
+    </Say>
 </Response>`);
       }
 
