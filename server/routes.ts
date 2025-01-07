@@ -49,7 +49,7 @@ function formatVoiceNumber(phone: string): string {
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
 
-  // Add the voice call endpoint before any other routes
+  // Voice call endpoint for landline calls (placed first to ensure it's registered before other routes)
   app.post("/api/voice/calls", async (req, res) => {
     try {
       if (!twilioClient) {
@@ -70,7 +70,7 @@ export function registerRoutes(app: Express): Server {
         throw new Error('TWILIO_PHONE_NUMBER environment variable is not set');
       }
 
-      // Format numbers for voice calls
+      // Format numbers for voice calls - using regular phone number format, not WhatsApp
       let toNumber = formatVoiceNumber(contactNumber);
       console.log('Formatted number:', toNumber);
 
@@ -131,6 +131,7 @@ export function registerRoutes(app: Express): Server {
       });
     }
   });
+
   const wss = new WebSocketServer({
     server: httpServer,
     verifyClient: (info: any) => {
@@ -443,9 +444,6 @@ export function registerRoutes(app: Express): Server {
   });
 
 
-  // Dedicated voice call endpoint for landline calls (This part is already moved to the top)
-
-
   // Get all conversations across channels
   app.get("/api/conversations", async (_req, res) => {
     try {
@@ -695,4 +693,15 @@ export function registerRoutes(app: Express): Server {
   });
 
   return httpServer;
+}
+
+function formatWhatsAppNumber(phone: string): string {
+  // Remove all non-digit characters except plus sign
+  const cleaned = phone.replace(/[^\d+]/g, '');
+
+  // Format for WhatsApp - all WhatsApp numbers must start with whatsapp:+
+  if (!cleaned.startsWith('+')) {
+    return `whatsapp:+${cleaned.startsWith('52') ? cleaned : '52' + cleaned}`;
+  }
+  return `whatsapp:${cleaned}`;
 }
