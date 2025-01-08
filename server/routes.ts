@@ -86,7 +86,7 @@ export function registerRoutes(app: Express): Server {
         Un representante se unirá a la llamada en breve.
     </Say>
     <Dial callerId="${process.env.TWILIO_PHONE_NUMBER}">
-        <Number>+525584277211</Number>
+        <Client>rottie-agent</Client>
     </Dial>
     <Say voice="Polly.Mia-Neural" language="es-MX">
         La llamada ha finalizado. Gracias por usar Rottie Connect.
@@ -693,6 +693,40 @@ export function registerRoutes(app: Express): Server {
         status: 'error',
         message: error.message,
         code: error.code || 'TEST_FAILED'
+      });
+    }
+  });
+
+  // Add new endpoint for generating client capability token
+  app.post("/api/voice/token", async (req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      const capability = new twilio.jwt.ClientCapability({
+        accountSid: process.env.TWILIO_ACCOUNT_SID!,
+        authToken: process.env.TWILIO_AUTH_TOKEN!,
+        ttl: 3600
+      });
+
+      capability.addScope(
+        new twilio.jwt.ClientCapability.IncomingClientScope('rottie-agent')
+      );
+      capability.addScope(
+        new twilio.jwt.ClientCapability.OutgoingClientScope({
+          applicationSid: process.env.TWILIO_TWIML_APP_SID,
+          clientName: 'rottie-agent'
+        })
+      );
+
+      const token = capability.toJwt();
+      res.json({ token });
+    } catch (error: any) {
+      console.error("Error generating capability token:", error);
+      res.status(500).json({
+        status: 'error',
+        message: error.message
       });
     }
   });
