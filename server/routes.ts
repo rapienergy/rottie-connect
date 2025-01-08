@@ -198,8 +198,9 @@ export function registerRoutes(app: Express): Server {
       }
 
       const start = Date.now();
-      console.log('Received webhook request');
-      console.log('Webhook payload:', JSON.stringify(req.body, null, 2));
+      console.log('\n=== Webhook Request ===');
+      console.log('Headers:', req.headers);
+      console.log('Body:', JSON.stringify(req.body, null, 2));
 
       // Always skip signature validation during local development
       const isDevEnvironment = app.get('env') === 'development';
@@ -207,7 +208,7 @@ export function registerRoutes(app: Express): Server {
 
       if (!isDevEnvironment) {
         const twilioSignature = req.headers['x-twilio-signature'];
-        const webhookUrl = `${process.env.BASE_URL || 'http://localhost:5000'}/webhook`;
+        const webhookUrl = `${process.env.BASE_URL}/webhook`;
 
         if (!twilioSignature || !process.env.TWILIO_AUTH_TOKEN) {
           console.error('Missing Twilio signature or auth token');
@@ -245,7 +246,7 @@ export function registerRoutes(app: Express): Server {
         ApiVersion
       } = req.body;
 
-      // Enhanced logging for call events
+      // Handle voice call events
       if (CallSid) {
         console.log('\n=== Voice Call Event ===');
         console.log('Call SID:', CallSid);
@@ -254,59 +255,52 @@ export function registerRoutes(app: Express): Server {
         console.log('To:', To);
         console.log('Duration:', CallDuration);
         console.log('Direction:', Direction);
-        if (ForwardedFrom) console.log('Forwarded From:', ForwardedFrom);
         if (RecordingUrl) console.log('Recording URL:', RecordingUrl);
         if (TranscriptionText) console.log('Transcription:', TranscriptionText);
-        console.log('API Version:', ApiVersion);
-        console.log('Account SID:', AccountSid);
         console.log('==========================\n');
 
-        try {
-          // Store call event in database
-          const message = await db
-            .insert(messages)
-            .values({
-              contactNumber: From?.replace('whatsapp:', '') || '',
-              content: `Voice Call - ${CallStatus} - Duration: ${CallDuration || 0}s`,
-              direction: Direction || "inbound",
-              status: CallStatus || 'unknown',
-              twilioSid: CallSid,
-              metadata: {
-                channel: 'voice',
-                callDuration: parseInt(CallDuration || '0'),
-                recordingUrl: RecordingUrl,
-                transcription: TranscriptionText,
-                profile: {
-                  name: ProfileName
-                }
-              },
-            })
-            .returning();
+        // Store call event in database
+        const message = await db
+          .insert(messages)
+          .values({
+            contactNumber: From?.replace('whatsapp:', '') || '',
+            content: `Voice Call - ${CallStatus}${CallDuration ? ` - Duration: ${CallDuration}s` : ''}`,
+            direction: Direction || "inbound",
+            status: CallStatus || 'unknown',
+            twilioSid: CallSid,
+            metadata: {
+              channel: 'voice',
+              callDuration: parseInt(CallDuration || '0'),
+              recordingUrl: RecordingUrl,
+              transcription: TranscriptionText
+            },
+          })
+          .returning();
 
-          // Broadcast call event to connected clients
-          broadcast({
-            type: "call_event",
-            call: {
-              ...message[0],
-              createdAt: new Date().toISOString()
-            }
-          });
+        // Broadcast call event to connected clients
+        broadcast({
+          type: "call_event",
+          call: {
+            ...message[0],
+            createdAt: new Date().toISOString()
+          }
+        });
 
-          console.log(`Processed Voice call event in ${Date.now() - start}ms`);
-          console.log('Call details stored:', message[0]);
-        } catch (err) {
-          console.error('Failed to process call event:', err);
-        }
-        // Return TwiML response for calls
+        console.log(`Processed voice call event in ${Date.now() - start}ms`);
+
+        // Return TwiML response for voice calls
+        // This TwiML will connect the customer with the browser-based client
         return res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="alice" language="es-MX">
-        Gracias por contestar. Esta es una llamada de prueba de Rottie Connect.
+    <Say voice="Polly.Mia-Neural" language="es-MX">
+        Hola, gracias por atender nuestra llamada. Le estamos contactando de Rottie Connect.
+        Un representante se unirá a la llamada en breve.
     </Say>
-    <Play digits="1234"></Play>
-    <Pause length="1"/>
-    <Say voice="alice" language="es-MX">
-        Fin de la llamada de prueba. Gracias.
+    <Dial callerId="${process.env.TWILIO_PHONE_NUMBER}">
+        <Client>rottie-agent</Client>
+    </Dial>
+    <Say voice="Polly.Mia-Neural" language="es-MX">
+        La llamada ha finalizado. Gracias por usar Rottie Connect.
     </Say>
 </Response>`);
       }
