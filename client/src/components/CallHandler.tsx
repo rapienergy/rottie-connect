@@ -22,12 +22,20 @@ export function CallHandler() {
             'Content-Type': 'application/json',
           }
         });
-        
+
         const data = await response.json();
         if (!data.token) throw new Error('Failed to get token');
 
         // Setup Twilio Device
-        currentDevice = new Device(data.token);
+        if (!currentDevice) {
+          console.log('Initializing Twilio Device...');
+          currentDevice = new Device();
+          await currentDevice.setup(data.token, {
+            debug: true,
+            warnings: true,
+            enableRingingState: true
+          });
+        }
 
         currentDevice.on('ready', () => {
           console.log('Twilio.Device Ready!');
@@ -44,17 +52,18 @@ export function CallHandler() {
         });
 
         currentDevice.on('connect', (conn) => {
+          console.log('Call connected!');
           setIsConnected(true);
           setActiveConnection(conn);
         });
 
         currentDevice.on('disconnect', () => {
+          console.log('Call disconnected');
           setIsConnected(false);
           setActiveConnection(null);
           setIsMuted(false);
         });
 
-        await currentDevice.register();
       } catch (error: any) {
         console.error('Error setting up Twilio device:', error);
         toast({
@@ -70,6 +79,7 @@ export function CallHandler() {
     return () => {
       if (currentDevice) {
         currentDevice.destroy();
+        currentDevice = null;
       }
     };
   }, []);
