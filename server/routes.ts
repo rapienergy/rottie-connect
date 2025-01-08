@@ -384,7 +384,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Send message using Messaging Service (supports SMS, WhatsApp, etc.)
+  // Handle message sending with proper number formatting
   app.post("/api/messages", async (req, res) => {
     try {
       if (!twilioClient) {
@@ -397,20 +397,31 @@ export function registerRoutes(app: Express): Server {
         throw new Error('Contact number and content are required');
       }
 
+      // Clean and format the phone numbers
+      const fromNumber = process.env.TWILIO_PHONE_NUMBER?.replace(/\s+/g, '');
+      if (!fromNumber) {
+        throw new Error('TWILIO_PHONE_NUMBER environment variable is not set');
+      }
+
       // Format the destination number based on channel
       const toNumber = channel === 'whatsapp'
-        ? `whatsapp:${contactNumber.startsWith('+') ? contactNumber : `+${contactNumber}`}`
+        ? `whatsapp:+${contactNumber.replace(/\s+/g, '').replace(/^\+/, '')}`
         : contactNumber;
+
+      const fromWhatsApp = channel === 'whatsapp'
+        ? `whatsapp:+${fromNumber.replace(/^\+/, '')}`
+        : fromNumber;
 
       console.log('\n=== Sending Message ===');
       console.log('Channel:', channel);
+      console.log('From:', fromWhatsApp);
       console.log('To:', toNumber);
       console.log('Content:', content);
       console.log('==========================\n');
 
       // Send message via Twilio
       const twilioMessage = await twilioClient.messages.create({
-        from: channel === 'whatsapp' ? `whatsapp:${process.env.TWILIO_PHONE_NUMBER}` : process.env.TWILIO_PHONE_NUMBER,
+        from: fromWhatsApp,
         to: toNumber,
         body: content
       });
@@ -421,7 +432,7 @@ export function registerRoutes(app: Express): Server {
       const message = await db
         .insert(messages)
         .values({
-          contactNumber: contactNumber.replace('whatsapp:', '').replace('+', ''),
+          contactNumber: contactNumber.replace(/\s+/g, '').replace(/^\+/, ''),
           content,
           direction: "rottie",
           status: twilioMessage.status,
@@ -448,6 +459,7 @@ export function registerRoutes(app: Express): Server {
       });
     }
   });
+
 
 
   // Get all conversations across channels
