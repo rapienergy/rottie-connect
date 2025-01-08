@@ -199,16 +199,20 @@ export function registerRoutes(app: Express): Server {
 
       const start = Date.now();
       console.log('\n=== Webhook Request ===');
-      console.log('Headers:', req.headers);
+      console.log('Request URL:', req.url);
+      console.log('Method:', req.method);
+      console.log('Headers:', JSON.stringify(req.headers, null, 2));
       console.log('Body:', JSON.stringify(req.body, null, 2));
+      console.log('Query:', JSON.stringify(req.query, null, 2));
+      console.log('==========================\n');
 
-      // Always skip signature validation during local development
+      // Always validate signature in production
       const isDevEnvironment = app.get('env') === 'development';
       console.log('Environment:', app.get('env'), 'Development mode:', isDevEnvironment);
 
       if (!isDevEnvironment) {
         const twilioSignature = req.headers['x-twilio-signature'];
-        const webhookUrl = `${process.env.BASE_URL}/webhook`;
+        const webhookUrl = 'https://rapienergy.live/webhook';
 
         if (!twilioSignature || !process.env.TWILIO_AUTH_TOKEN) {
           console.error('Missing Twilio signature or auth token');
