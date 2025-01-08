@@ -398,21 +398,22 @@ export function registerRoutes(app: Express): Server {
       }
 
       // Format the destination number based on channel
-      const toNumber = formatWhatsAppNumber(contactNumber);
+      const toNumber = channel === 'whatsapp'
+        ? `whatsapp:${contactNumber.startsWith('+') ? contactNumber : `+${contactNumber}`}`
+        : contactNumber;
 
-      console.log('Sending message via Messaging Service:');
+      console.log('\n=== Sending Message ===');
       console.log('Channel:', channel);
       console.log('To:', toNumber);
       console.log('Content:', content);
+      console.log('==========================\n');
 
-      // Send message via Twilio Messaging Service
-      const messagingOptions = {
-        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+      // Send message via Twilio
+      const twilioMessage = await twilioClient.messages.create({
+        from: channel === 'whatsapp' ? `whatsapp:${process.env.TWILIO_PHONE_NUMBER}` : process.env.TWILIO_PHONE_NUMBER,
         to: toNumber,
         body: content
-      };
-
-      const twilioMessage = await twilioClient.messages.create(messagingOptions);
+      });
 
       console.log('Message sent successfully:', twilioMessage.sid);
 
@@ -420,7 +421,7 @@ export function registerRoutes(app: Express): Server {
       const message = await db
         .insert(messages)
         .values({
-          contactNumber,
+          contactNumber: contactNumber.replace('whatsapp:', '').replace('+', ''),
           content,
           direction: "rottie",
           status: twilioMessage.status,
