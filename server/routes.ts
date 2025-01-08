@@ -311,83 +311,72 @@ export function registerRoutes(app: Express): Server {
 
       // Handle message status updates efficiently
       if (MessageStatus) {
-        console.log('\n=== Message Status Update ===');
-        console.log('MessageSid:', MessageSid);
-        console.log('Status:', MessageStatus);
-        console.log('From:', From);
-        console.log('To:', To);
-        console.log('==========================\n');
-
-        // Update message status in database and broadcast to clients
-        try {
-          broadcast({
-            type: "message_status_updated",
-            message: {
-              twilioSid: MessageSid,
-              status: MessageStatus,
-              contactNumber: From?.replace('whatsapp:', '')
-            }
-          });
-
-          // Log success
-          console.log(`Successfully processed message status update for ${MessageSid}`);
-          return res.status(200).send('OK');
-        } catch (error) {
-          console.error('Error processing message status:', error);
-          return res.status(500).send('Error processing message status');
-        }
+        broadcast({
+          type: "message_status_updated",
+          message: {
+            twilioSid: MessageSid,
+            status: MessageStatus,
+            contactNumber: From?.replace('whatsapp:', '')
+          }
+        });
+        return res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
       }
 
-      // Determine message channel and format
+      // Determine channel type with single check
       const channel = From?.startsWith('whatsapp:') ? 'whatsapp'
         : CallSid ? 'voice'
           : 'sms';
 
-      const contactNumber = From?.replace('whatsapp:', '');
+      const contactNumber = channel === 'whatsapp' ? From.replace('whatsapp:', '') : From;
 
-      console.log('\n=== New Message Received ===');
-      console.log('Channel:', channel);
-      console.log('From:', From);
-      console.log('To:', To);
-      console.log('Body:', Body);
-      console.log('MessageSid:', MessageSid);
-      console.log('==========================\n');
+      console.log(`Received ${channel} interaction from ${From}`);
+      console.log('Details:', { From, To, Body, MessageSid, CallSid });
 
-      try {
-        // Store message in database
-        const message = await db
-          .insert(messages)
-          .values({
-            contactNumber,
-            contactName: ProfileName || undefined,
-            content: Body || '',
-            direction: "inbound",
-            status: "delivered",
-            twilioSid: MessageSid,
-            metadata: {
-              channel,
-              profile: {
-                name: ProfileName
-              }
+      // Efficiently store interaction in database
+      const message = await db
+        .insert(messages)
+        .values({
+          contactNumber,
+          contactName: ProfileName || undefined,
+          content: Body || TranscriptionText || `${channel.toUpperCase()} interaction`,
+          direction: "inbound",
+          status: "delivered",
+          twilioSid: MessageSid || CallSid,
+          metadata: {
+            channel,
+            profile: {
+              name: ProfileName
             },
-          })
-          .returning();
+            recordingUrl: RecordingUrl,
+            transcription: TranscriptionText
+          },
+        })
+        .returning();
 
-        // Broadcast to connected clients
-        broadcast({
-          type: "message_created",
-          message: {
-            ...message[0],
-            createdAt: new Date().toISOString()
+      // Optimized broadcast with pre-formatted message
+      const broadcastMessage = {
+        type: "message_created",
+        message: {
+          ...message[0],
+          createdAt: new Date().toISOString(),
+          direction: "inbound",
+          status: "delivered",
+          metadata: {
+            channel,
+            profile: {
+              name: ProfileName
+            },
+            recordingUrl: RecordingUrl,
+            transcription: TranscriptionText
           }
-        });
+        }
+      };
 
-        console.log('Successfully stored and broadcast message:', message[0]);
-        return res.status(200).send('OK');
-      } catch (error) {
-        console.error('Error processing message:', error);
-        return res.status(500).send('Error processing message');
-      }
+      console.log(`Processed ${channel} interaction in ${Date.now() - start}ms`);
+      broadcast(broadcastMessage);
+
+      // Always return TwiML response
+      res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
 
     } catch (error: any) {
       console.error("Error processing webhook:", error);
