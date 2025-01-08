@@ -81,18 +81,22 @@ export function registerRoutes(app: Express): Server {
         from: process.env.TWILIO_PHONE_NUMBER,
         twiml: `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="alice" language="es-MX">
-        Gracias por contestar. Esta es una llamada de prueba de Rottie Connect.
+    <Say voice="Polly.Mia-Neural" language="es-MX">
+        Hola, gracias por atender nuestra llamada. Le estamos contactando de Rottie Connect.
+        Un representante se unirá a la llamada en breve.
     </Say>
-    <Play digits="1234"></Play>
-    <Pause length="1"/>
-    <Say voice="alice" language="es-MX">
-        Fin de la llamada de prueba. Gracias.
+    <Dial callerId="${process.env.TWILIO_PHONE_NUMBER}">
+        <Number>+525584277211</Number>
+    </Dial>
+    <Say voice="Polly.Mia-Neural" language="es-MX">
+        La llamada ha finalizado. Gracias por usar Rottie Connect.
     </Say>
 </Response>`,
         statusCallback: `${process.env.BASE_URL}/webhook`,
         statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
-        record: true
+        record: true,
+        trim: 'trim-silence',
+        machineDetection: 'Enable'
       });
 
       console.log('Call initiated:', call.sid);
