@@ -704,6 +704,10 @@ export function registerRoutes(app: Express): Server {
         throw new Error('Twilio client not initialized');
       }
 
+      if (!process.env.TWILIO_TWIML_APP_SID) {
+        throw new Error('TWILIO_TWIML_APP_SID environment variable is not set');
+      }
+
       const capability = new twilio.jwt.ClientCapability({
         accountSid: process.env.TWILIO_ACCOUNT_SID!,
         authToken: process.env.TWILIO_AUTH_TOKEN!,
@@ -721,6 +725,8 @@ export function registerRoutes(app: Express): Server {
       );
 
       const token = capability.toJwt();
+
+      console.log('Generated new capability token');
       res.json({ token });
     } catch (error: any) {
       console.error("Error generating capability token:", error);
