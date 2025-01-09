@@ -6,6 +6,7 @@ import { messages } from "@db/schema";
 import { eq, desc } from "drizzle-orm";
 import twilio from "twilio";
 import type { Twilio } from "twilio";
+import { apiKeyAuth, rateLimit, validateRequest } from "./middleware/auth";
 
 // Initialize Twilio client with error handling
 let twilioClient: Twilio | null = null;
@@ -25,30 +26,237 @@ try {
 
 // Update formatVoiceNumber function for better number formatting
 function formatVoiceNumber(phone: string): string {
-  // Remove all non-digit characters except plus sign
   const cleaned = phone.replace(/[^\d+]/g, '');
 
-  // Handle Mexican numbers
   if (cleaned.startsWith('52') && cleaned.length === 12) {
     return '+' + cleaned;
   }
 
-  // Add Mexico country code for 10-digit numbers
   if (cleaned.length === 10) {
     return '+52' + cleaned;
   }
 
-  // If already has plus and proper length, return as is
   if (cleaned.startsWith('+') && cleaned.length >= 12) {
     return cleaned;
   }
 
-  // Default: add +52 if no country code
   return cleaned.startsWith('+') ? cleaned : '+52' + cleaned;
 }
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
+
+  // Apply API middlewares
+  app.use(apiKeyAuth);
+  app.use(rateLimit);
+  app.use(validateRequest);
+
+  // REST API v1 Endpoints
+
+  // Voice Calls API
+  app.post("/api/v1/calls", async (req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      const { contactNumber, recordCall = true, machineDetection = true } = req.body;
+
+      console.log('\n=== Initiating Voice Call API ===');
+      console.log('To:', contactNumber);
+      console.log('Record:', recordCall);
+      console.log('Machine Detection:', machineDetection);
+
+      if (!process.env.TWILIO_PHONE_NUMBER) {
+        throw new Error('TWILIO_PHONE_NUMBER environment variable is not set');
+      }
+
+      const toNumber = formatVoiceNumber(contactNumber);
+      console.log('Formatted number:', toNumber);
+
+      const callOptions = {
+        to: toNumber,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        twiml: `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Mia-Neural" language="es-MX">
+        Hola, gracias por atender nuestra llamada. Le estamos contactando de Rottie Connect.
+        Un representante se unirá a la llamada en breve.
+    </Say>
+    <Dial callerId="${process.env.TWILIO_PHONE_NUMBER}">
+        <Client>rottie-agent</Client>
+    </Dial>
+    <Say voice="Polly.Mia-Neural" language="es-MX">
+        La llamada ha finalizado. Gracias por usar Rottie Connect.
+    </Say>
+</Response>`,
+        statusCallback: `${process.env.BASE_URL}/webhook`,
+        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+        record: recordCall,
+        trim: 'trim-silence',
+        machineDetection: machineDetection ? 'Enable' : 'Disable'
+      };
+
+      const call = await twilioClient.calls.create(callOptions);
+
+      console.log('Call initiated:', call.sid);
+      console.log('==========================\n');
+
+      res.json({
+        success: true,
+        call: {
+          sid: call.sid,
+          status: call.status,
+          direction: call.direction,
+          from: call.from,
+          to: call.to
+        }
+      });
+    } catch (error: any) {
+      console.error("Error initiating call:", error);
+      res.status(500).json({
+        success: false,
+        error: {
+          message: error.message,
+          code: error.code || 'CALL_INITIATION_ERROR',
+          details: error.details || {}
+        }
+      });
+    }
+  });
+
+  // Messages API
+  app.post("/api/v1/messages", async (req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      const { contactNumber, content, channel = 'whatsapp' } = req.body;
+
+      const toNumber = formatWhatsAppNumber(contactNumber);
+
+      console.log('Sending message via API:');
+      console.log('Channel:', channel);
+      console.log('To:', toNumber);
+      console.log('Content:', content);
+
+      const messagingOptions = {
+        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+        to: toNumber,
+        body: content
+      };
+
+      const twilioMessage = await twilioClient.messages.create(messagingOptions);
+
+      const message = await db
+        .insert(messages)
+        .values({
+          contactNumber,
+          content,
+          direction: "rottie",
+          status: twilioMessage.status,
+          twilioSid: twilioMessage.sid,
+          metadata: {
+            channel
+          },
+        })
+        .returning();
+
+      // Broadcast to WebSocket clients
+      broadcast({
+        type: "message_created",
+        message: message[0]
+      });
+
+      res.json({
+        success: true,
+        message: message[0]
+      });
+    } catch (error: any) {
+      console.error("Error sending message:", error);
+      res.status(500).json({
+        success: false,
+        error: {
+          message: error.message,
+          code: error.code || 'MESSAGE_SEND_ERROR'
+        }
+      });
+    }
+  });
+
+  // Get Call Status API
+  app.get("/api/v1/calls/:callSid", async (req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      const { callSid } = req.params;
+      const call = await twilioClient.calls(callSid).fetch();
+
+      res.json({
+        success: true,
+        call: {
+          sid: call.sid,
+          status: call.status,
+          direction: call.direction,
+          from: call.from,
+          to: call.to,
+          duration: call.duration,
+          startTime: call.startTime,
+          endTime: call.endTime,
+          price: call.price,
+          priceUnit: call.priceUnit
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching call status:", error);
+      res.status(500).json({
+        success: false,
+        error: {
+          message: error.message,
+          code: error.code || 'CALL_STATUS_ERROR'
+        }
+      });
+    }
+  });
+
+  // Get Message Status API
+  app.get("/api/v1/messages/:messageSid", async (req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      const { messageSid } = req.params;
+      const message = await twilioClient.messages(messageSid).fetch();
+
+      res.json({
+        success: true,
+        message: {
+          sid: message.sid,
+          status: message.status,
+          direction: message.direction,
+          from: message.from,
+          to: message.to,
+          body: message.body,
+          numSegments: message.numSegments,
+          price: message.price,
+          priceUnit: message.priceUnit
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching message status:", error);
+      res.status(500).json({
+        success: false,
+        error: {
+          message: error.message,
+          code: error.code || 'MESSAGE_STATUS_ERROR'
+        }
+      });
+    }
+  });
 
   // Voice call endpoint for landline calls (placed first to ensure it's registered before other routes)
   app.post("/api/voice/calls", async (req, res) => {
@@ -741,10 +949,8 @@ export function registerRoutes(app: Express): Server {
 }
 
 function formatWhatsAppNumber(phone: string): string {
-  // Remove all non-digit characters except plus sign
   const cleaned = phone.replace(/[^\d+]/g, '');
 
-  // Format for WhatsApp - all WhatsApp numbers must start with whatsapp:+
   if (!cleaned.startsWith('+')) {
     return `whatsapp:+${cleaned.startsWith('52') ? cleaned : '52' + cleaned}`;
   }
