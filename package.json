@@ -67,7 +67,7 @@
     "recharts": "^2.13.0",
     "tailwind-merge": "^2.5.4",
     "tailwindcss-animate": "^1.0.7",
-    "twilio": "^5.4.2",
+    "twilio": "^5.4.0",
     "twilio-client": "^1.15.1",
     "vaul": "^1.1.0",
     "wouter": "^3.3.5",

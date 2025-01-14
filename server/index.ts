@@ -51,32 +51,26 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  try {
-    // Register API routes first
-    const server = registerRoutes(app);
+  // Register API routes first
+  const server = registerRoutes(app);
 
-    // Error handling middleware
-    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-      console.error('Server error:', err);
-      const status = err.status || err.statusCode || 500;
-      const message = err.message || "Internal Server Error";
-      res.status(status).json({ message });
-    });
+  // Error handling middleware
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    const status = err.status || err.statusCode || 500;
+    const message = err.message || "Internal Server Error";
+    res.status(status).json({ message });
+  });
 
-    // Setup static files and Vite middleware
-    if (app.get("env") === "development") {
-      await setupVite(app, server);
-    } else {
-      serveStatic(app);
-    }
-
-    // Start server
-    const PORT = 5000;
-    server.listen(PORT, "0.0.0.0", () => {
-      log(`Server running on port ${PORT}`);
-    });
-  } catch (error) {
-    console.error('Failed to start server:', error);
-    process.exit(1);
+  // Only setup static file and Vite middleware after API routes
+  if (app.get("env") === "development") {
+    await setupVite(app, server);
+  } else {
+    serveStatic(app);
   }
+
+  // Start server
+  const PORT = 5000;
+  server.listen(PORT, "0.0.0.0", () => {
+    log(`serving on port ${PORT}`);
+  });
 })();
