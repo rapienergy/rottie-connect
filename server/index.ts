@@ -12,7 +12,7 @@ app.use(express.urlencoded({ extended: false }));
 app.use('/api', (req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
@@ -51,26 +51,50 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Register API routes first
-  const server = registerRoutes(app);
+  try {
+    // Verify required environment variables
+    const requiredEnvVars = [
+      'TWILIO_ACCOUNT_SID',
+      'TWILIO_AUTH_TOKEN',
+      'TWILIO_PHONE_NUMBER',
+      'TWILIO_MESSAGING_SERVICE_SID',
+      'BASE_URL',
+      'API_KEY'
+    ];
 
-  // Error handling middleware
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-    res.status(status).json({ message });
-  });
+    const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+    if (missingVars.length > 0) {
+      console.error('Missing required environment variables:', missingVars.join(', '));
+    }
 
-  // Only setup static file and Vite middleware after API routes
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
-    serveStatic(app);
+    // Register API routes first
+    console.log('Initializing server...');
+    const server = registerRoutes(app);
+
+    // Error handling middleware
+    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+      console.error('Server error:', err);
+      const status = err.status || err.statusCode || 500;
+      const message = err.message || "Internal Server Error";
+      res.status(status).json({ message });
+    });
+
+    // Only setup static file and Vite middleware after API routes
+    if (app.get("env") === "development") {
+      await setupVite(app, server);
+    } else {
+      serveStatic(app);
+    }
+
+    // Start server
+    const PORT = 5000;
+    server.listen(PORT, "0.0.0.0", () => {
+      log(`Server running on port ${PORT}`);
+      log('Environment:', app.get('env'));
+      log('Base URL:', process.env.BASE_URL);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
   }
-
-  // Start server
-  const PORT = 5000;
-  server.listen(PORT, "0.0.0.0", () => {
-    log(`serving on port ${PORT}`);
-  });
 })();

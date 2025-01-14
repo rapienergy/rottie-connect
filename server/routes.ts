@@ -8,23 +8,26 @@ import twilio from "twilio";
 import type { Twilio } from "twilio";
 import { apiKeyAuth, rateLimit, validateRequest } from "./middleware/auth";
 
-// Initialize Twilio client with error handling
-let twilioClient: Twilio | null = null;
-try {
-  if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) {
-    console.error('Missing required Twilio credentials');
-  } else {
-    twilioClient = twilio(
-      process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
-    );
-    console.log('Twilio client initialized successfully');
+// Utility functions for phone number formatting
+function formatWhatsAppNumber(phone: string): string {
+  const cleaned = phone.replace(/[^\d+]/g, '');
+  let formatted = cleaned;
+
+  if (formatted.startsWith('whatsapp:')) {
+    formatted = formatted.substring(9);
   }
-} catch (error) {
-  console.error('Failed to initialize Twilio client:', error);
+
+  if (!formatted.startsWith('+')) {
+    formatted = '+' + formatted;
+  }
+
+  if (!formatted.startsWith('+52') && formatted.length === 11) {
+    formatted = '+52' + formatted.substring(1);
+  }
+
+  return `whatsapp:${formatted}`;
 }
 
-// Update formatVoiceNumber function for better number formatting
 function formatVoiceNumber(phone: string): string {
   const cleaned = phone.replace(/[^\d+]/g, '');
 
@@ -43,6 +46,19 @@ function formatVoiceNumber(phone: string): string {
   return cleaned.startsWith('+') ? cleaned : '+52' + cleaned;
 }
 
+// Initialize Twilio client
+let twilioClient: Twilio | null = null;
+try {
+  if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) {
+    console.error('Missing Twilio credentials');
+  } else {
+    twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    console.log('Twilio client initialized successfully');
+  }
+} catch (error) {
+  console.error('Failed to initialize Twilio client:', error);
+}
+
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
 
@@ -51,7 +67,177 @@ export function registerRoutes(app: Express): Server {
   app.use(rateLimit);
   app.use(validateRequest);
 
-  // REST API v1 Endpoints
+  // WebSocket setup with improved error handling
+  const clients = new Set<WebSocket>();
+  const broadcast = (message: any) => {
+    if (clients.size === 0) return;
+    const messageStr = JSON.stringify(message);
+    clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        try {
+          client.send(messageStr);
+        } catch (error) {
+          console.error('Error sending WebSocket message:', error);
+          clients.delete(client);
+        }
+      }
+    });
+  };
+
+  const wss = new WebSocketServer({
+    server: httpServer,
+    verifyClient: (info: any) => {
+      return info.req.headers['sec-websocket-protocol'] !== 'vite-hmr';
+    }
+  });
+
+  wss.on('connection', (ws: WebSocket) => {
+    console.log('New WebSocket client connected');
+    clients.add(ws);
+
+    ws.on('message', (message: string) => {
+      try {
+        const data = JSON.parse(message.toString());
+        if (data.type === 'ping') {
+          ws.send(JSON.stringify({ type: 'pong' }));
+        }
+      } catch (error) {
+        console.error('Error processing WebSocket message:', error);
+      }
+    });
+
+    ws.on('close', () => {
+      clients.delete(ws);
+      console.log('WebSocket client disconnected');
+    });
+
+    ws.on('error', (error) => {
+      console.error('WebSocket error:', error);
+      clients.delete(ws);
+    });
+  });
+
+  // Message endpoints
+  app.post("/api/messages", async (req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      const { contactNumber, content, channel = 'whatsapp' } = req.body;
+
+      if (!contactNumber || !content) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: 'Contact number and content are required',
+            code: 'MISSING_REQUIRED_FIELDS'
+          }
+        });
+      }
+
+      const toNumber = channel === 'whatsapp' ?
+        formatWhatsAppNumber(contactNumber) :
+        formatVoiceNumber(contactNumber);
+
+      console.log('\n=== Sending message ===');
+      console.log('Channel:', channel);
+      console.log('To:', toNumber);
+      console.log('Content:', content);
+
+      const messagingOptions = {
+        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+        to: toNumber,
+        body: content,
+        statusCallback: `${process.env.BASE_URL}/webhook`,
+        persistentAction: ['status_callback'],
+      };
+
+      const twilioMessage = await twilioClient.messages.create(messagingOptions);
+      console.log('Message sent successfully:', twilioMessage.sid);
+
+      const [message] = await db
+        .insert(messages)
+        .values({
+          contactNumber: contactNumber.replace('whatsapp:', ''),
+          content,
+          direction: "rottie",
+          status: twilioMessage.status,
+          twilioSid: twilioMessage.sid,
+          metadata: {
+            channel,
+            profile: null
+          },
+        })
+        .returning();
+
+      broadcast({
+        type: "message_created",
+        message: message
+      });
+
+      res.json({
+        success: true,
+        message: {
+          ...message,
+          twilioStatus: twilioMessage.status,
+          twilioSid: twilioMessage.sid,
+          to: twilioMessage.to,
+          from: twilioMessage.from
+        }
+      });
+    } catch (error: any) {
+      console.error("Error sending message:", error);
+      res.status(500).json({
+        success: false,
+        error: {
+          message: error.message,
+          code: error.code || 'MESSAGE_SEND_ERROR',
+          details: error.details || {}
+        }
+      });
+    }
+  });
+
+  // Voice token generation endpoint
+  app.post("/api/voice/token", async (req, res) => {
+    try {
+      if (!process.env.TWILIO_TWIML_APP_SID) {
+        throw new Error('TWILIO_TWIML_APP_SID environment variable is not set');
+      }
+
+      const capability = new twilio.jwt.ClientCapability({
+        accountSid: process.env.TWILIO_ACCOUNT_SID!,
+        authToken: process.env.TWILIO_AUTH_TOKEN!,
+        ttl: 3600
+      });
+
+      // Add capability to receive incoming calls
+      capability.addScope(
+        new twilio.jwt.ClientCapability.IncomingClientScope('rottie-agent')
+      );
+
+      // Add capability to make outgoing calls
+      capability.addScope(
+        new twilio.jwt.ClientCapability.OutgoingClientScope({
+          applicationSid: process.env.TWILIO_TWIML_APP_SID,
+          clientName: 'rottie-agent'
+        })
+      );
+
+      const token = capability.toJwt();
+      console.log('Generated capability token');
+
+      res.json({ token });
+    } catch (error: any) {
+      console.error('Error generating token:', error);
+      res.status(500).json({
+        status: 'error',
+        message: error.message,
+        code: 'TOKEN_GENERATION_ERROR'
+      });
+    }
+  });
 
   // Voice Calls API
   app.post("/api/v1/calls", async (req, res) => {
@@ -78,18 +264,18 @@ export function registerRoutes(app: Express): Server {
         to: toNumber,
         from: process.env.TWILIO_PHONE_NUMBER,
         twiml: `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say voice="Polly.Mia-Neural" language="es-MX">
-        Hola, gracias por atender nuestra llamada. Le estamos contactando de Rottie Connect.
-        Un representante se unirá a la llamada en breve.
-    </Say>
-    <Dial callerId="${process.env.TWILIO_PHONE_NUMBER}">
-        <Client>rottie-agent</Client>
-    </Dial>
-    <Say voice="Polly.Mia-Neural" language="es-MX">
-        La llamada ha finalizado. Gracias por usar Rottie Connect.
-    </Say>
-</Response>`,
+        <Response>
+            <Say voice="Polly.Mia-Neural" language="es-MX">
+                Hola, gracias por atender nuestra llamada. Le estamos contactando de Rottie Connect.
+                Un representante se unirá a la llamada en breve.
+            </Say>
+            <Dial callerId="${process.env.TWILIO_PHONE_NUMBER}">
+                <Client>rottie-agent</Client>
+            </Dial>
+            <Say voice="Polly.Mia-Neural" language="es-MX">
+                La llamada ha finalizado. Gracias por usar Rottie Connect.
+            </Say>
+        </Response>`,
         statusCallback: `${process.env.BASE_URL}/webhook`,
         statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
         record: recordCall,
@@ -134,52 +320,98 @@ export function registerRoutes(app: Express): Server {
 
       const { contactNumber, content, channel = 'whatsapp' } = req.body;
 
-      const toNumber = formatWhatsAppNumber(contactNumber);
+      if (!contactNumber || !content) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: 'Contact number and content are required',
+            code: 'MISSING_REQUIRED_FIELDS'
+          }
+        });
+      }
 
-      console.log('Sending message via API:');
+      // Format number based on channel
+      const toNumber = channel === 'whatsapp' ?
+        formatWhatsAppNumber(contactNumber) :
+        formatVoiceNumber(contactNumber);
+
+      console.log('\n=== Sending message via API ===');
       console.log('Channel:', channel);
       console.log('To:', toNumber);
       console.log('Content:', content);
 
+      if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
+        throw new Error('TWILIO_MESSAGING_SERVICE_SID environment variable is not set');
+      }
+
+      // Prepare message options
       const messagingOptions = {
         messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
         to: toNumber,
-        body: content
+        body: content,
+        // Add additional parameters for better tracking
+        statusCallback: `${process.env.BASE_URL}/webhook`,
+        // Persist message properties for better tracking
+        persistentAction: ['status_callback'],
       };
 
       const twilioMessage = await twilioClient.messages.create(messagingOptions);
+      console.log('Message sent successfully:', twilioMessage.sid);
 
-      const message = await db
+      // Store in database with enhanced metadata
+      const [dbMessage] = await db
         .insert(messages)
         .values({
-          contactNumber,
+          contactNumber: contactNumber.replace('whatsapp:', ''),
           content,
           direction: "rottie",
           status: twilioMessage.status,
           twilioSid: twilioMessage.sid,
           metadata: {
-            channel
+            channel,
+            profile: {
+              name: null
+            }
           },
         })
         .returning();
 
-      // Broadcast to WebSocket clients
+      // Broadcast to WebSocket clients for real-time updates
       broadcast({
         type: "message_created",
-        message: message[0]
+        message: dbMessage
       });
 
+      // Return detailed success response
       res.json({
         success: true,
-        message: message[0]
+        message: {
+          ...dbMessage,
+          twilioStatus: twilioMessage.status,
+          twilioSid: twilioMessage.sid,
+          to: twilioMessage.to,
+          from: twilioMessage.from
+        }
       });
     } catch (error: any) {
       console.error("Error sending message:", error);
+      console.error("Error details:", {
+        code: error.code,
+        status: error.status,
+        moreInfo: error.moreInfo,
+        details: error.details
+      });
+
+      // Return detailed error response
       res.status(500).json({
         success: false,
         error: {
           message: error.message,
-          code: error.code || 'MESSAGE_SEND_ERROR'
+          code: error.code || 'MESSAGE_SEND_ERROR',
+          details: {
+            status: error.status,
+            moreInfo: error.moreInfo
+          }
         }
       });
     }
@@ -288,18 +520,18 @@ export function registerRoutes(app: Express): Server {
         to: toNumber,
         from: process.env.TWILIO_PHONE_NUMBER,
         twiml: `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say voice="Polly.Mia-Neural" language="es-MX">
-        Hola, gracias por atender nuestra llamada. Le estamos contactando de Rottie Connect.
-        Un representante se unirá a la llamada en breve.
-    </Say>
-    <Dial callerId="${process.env.TWILIO_PHONE_NUMBER}">
-        <Client>rottie-agent</Client>
-    </Dial>
-    <Say voice="Polly.Mia-Neural" language="es-MX">
-        La llamada ha finalizado. Gracias por usar Rottie Connect.
-    </Say>
-</Response>`,
+        <Response>
+            <Say voice="Polly.Mia-Neural" language="es-MX">
+                Hola, gracias por atender nuestra llamada. Le estamos contactando de Rottie Connect.
+                Un representante se unirá a la llamada en breve.
+            </Say>
+            <Dial callerId="${process.env.TWILIO_PHONE_NUMBER}">
+                <Client>rottie-agent</Client>
+            </Dial>
+            <Say voice="Polly.Mia-Neural" language="es-MX">
+                La llamada ha finalizado. Gracias por usar Rottie Connect.
+            </Say>
+        </Response>`,
         statusCallback: `${process.env.BASE_URL}/webhook`,
         statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
         record: true,
@@ -345,58 +577,6 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  const wss = new WebSocketServer({
-    server: httpServer,
-    verifyClient: (info: any) => {
-      return info.req.headers['sec-websocket-protocol'] !== 'vite-hmr';
-    }
-  });
-
-  // Optimize WebSocket client tracking with Set
-  const clients = new Set<WebSocket>();
-
-  // Optimize broadcast with single stringification
-  const broadcast = (message: any) => {
-    if (clients.size === 0) return; // Skip if no clients
-
-    const messageStr = JSON.stringify(message);
-    clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(messageStr);
-      }
-    });
-  };
-
-  // WebSocket connection handler with improved error handling
-  wss.on('connection', (ws: WebSocket) => {
-    console.log('New WebSocket client connected');
-    clients.add(ws);
-
-    ws.on('message', (message: string) => {
-      try {
-        const data = JSON.parse(message.toString());
-
-        switch (data.type) {
-          case 'ping':
-            ws.send(JSON.stringify({ type: 'pong' }));
-            break;
-        }
-      } catch (error) {
-        console.error('Error processing WebSocket message:', error);
-      }
-    });
-
-    const cleanup = () => {
-      clients.delete(ws);
-      console.log('WebSocket client disconnected');
-    };
-
-    ws.on('close', cleanup);
-    ws.on('error', (error) => {
-      console.error('WebSocket error:', error);
-      cleanup();
-    });
-  });
 
   // Optimized webhook handler with improved validation and testing support
   app.post("/webhook", async (req, res) => {
@@ -471,7 +651,7 @@ export function registerRoutes(app: Express): Server {
 
         try {
           // Store call event in database
-          const message = await db
+          const [message] = await db
             .insert(messages)
             .values({
               contactNumber: From?.replace('whatsapp:', '') || '',
@@ -495,28 +675,28 @@ export function registerRoutes(app: Express): Server {
           broadcast({
             type: "call_event",
             call: {
-              ...message[0],
+              ...message,
               createdAt: new Date().toISOString()
             }
           });
 
           console.log(`Processed Voice call event in ${Date.now() - start}ms`);
-          console.log('Call details stored:', message[0]);
+          console.log('Call details stored:', message);
         } catch (err) {
           console.error('Failed to process call event:', err);
         }
         // Return TwiML response for calls
         return res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say voice="alice" language="es-MX">
-        Gracias por contestar. Esta es una llamada de prueba de Rottie Connect.
-    </Say>
-    <Play digits="1234"></Play>
-    <Pause length="1"/>
-    <Say voice="alice" language="es-MX">
-        Fin de la llamada de prueba. Gracias.
-    </Say>
-</Response>`);
+        <Response>
+            <Say voice="alice" language="es-MX">
+                Gracias por contestar. Esta es una llamada de prueba de Rottie Connect.
+            </Say>
+            <Play digits="1234"></Play>
+            <Pause length="1"/>
+            <Say voice="alice" language="es-MX">
+                Fin de la llamada de prueba. Gracias.
+            </Say>
+        </Response>`);
       }
 
       // Handle message status updates efficiently
@@ -543,7 +723,7 @@ export function registerRoutes(app: Express): Server {
       console.log('Details:', { From, To, Body, MessageSid, CallSid });
 
       // Efficiently store interaction in database
-      const message = await db
+      const [message] = await db
         .insert(messages)
         .values({
           contactNumber,
@@ -558,7 +738,8 @@ export function registerRoutes(app: Express): Server {
               name: ProfileName
             },
             recordingUrl: RecordingUrl,
-            transcription: TranscriptionText
+            transcription: TranscriptionText,
+            callDuration: CallDuration ? parseInt(CallDuration) : null
           },
         })
         .returning();
@@ -567,7 +748,7 @@ export function registerRoutes(app: Express): Server {
       const broadcastMessage = {
         type: "message_created",
         message: {
-          ...message[0],
+          ...message,
           createdAt: new Date().toISOString(),
           direction: "inbound",
           status: "delivered",
@@ -591,6 +772,7 @@ export function registerRoutes(app: Express): Server {
       res.status(500).send("Internal server error");
     }
   });
+
 
   // Send message using Messaging Service (supports SMS, WhatsApp, etc.)
   app.post("/api/messages", async (req, res) => {
@@ -617,7 +799,9 @@ export function registerRoutes(app: Express): Server {
       const messagingOptions = {
         messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
         to: toNumber,
-        body: content
+        body: content,
+        statusCallback: `${process.env.BASE_URL}/webhook`,
+        persistentAction: ['status_callback'],
       };
 
       const twilioMessage = await twilioClient.messages.create(messagingOptions);
@@ -625,16 +809,17 @@ export function registerRoutes(app: Express): Server {
       console.log('Message sent successfully:', twilioMessage.sid);
 
       // Store message in database
-      const message = await db
+      const [message] = await db
         .insert(messages)
         .values({
-          contactNumber,
+          contactNumber: contactNumber.replace('whatsapp:', ''),
           content,
           direction: "rottie",
           status: twilioMessage.status,
           twilioSid: twilioMessage.sid,
           metadata: {
-            channel
+            channel,
+            profile: null
           },
         })
         .returning();
@@ -642,10 +827,10 @@ export function registerRoutes(app: Express): Server {
       // Broadcast the new message to all connected clients
       broadcast({
         type: "message_created",
-        message: message[0]
+        message: message
       });
 
-      res.json(message[0]);
+      res.json(message);
     } catch (error: any) {
       console.error("Error sending message:", error);
       res.status(500).json({
@@ -655,6 +840,7 @@ export function registerRoutes(app: Express): Server {
       });
     }
   });
+
 
 
   // Get all conversations across channels
@@ -813,7 +999,7 @@ export function registerRoutes(app: Express): Server {
         throw new Error('Messaging Service SID not configured');
       }
 
-      // Get Messaging Service details
+            // Get Messaging Service details
       const service = await twilioClient.messaging.v1.services(messagingServiceSid).fetch();
 
       // Get phone numbers associated with the Messaging Service
@@ -905,54 +1091,5 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Add new endpoint for generating client capability token
-  app.post("/api/voice/token", async (req, res) => {
-    try {
-      if (!twilioClient) {
-        throw new Error('Twilio client not initialized');
-      }
-
-      if (!process.env.TWILIO_TWIML_APP_SID) {
-        throw new Error('TWILIO_TWIML_APP_SID environment variable is not set');
-      }
-
-      const capability = new twilio.jwt.ClientCapability({
-        accountSid: process.env.TWILIO_ACCOUNT_SID!,
-        authToken: process.env.TWILIO_AUTH_TOKEN!,
-        ttl: 3600
-      });
-
-      capability.addScope(
-        new twilio.jwt.ClientCapability.IncomingClientScope('rottie-agent')
-      );
-      capability.addScope(
-        new twilio.jwt.ClientCapability.OutgoingClientScope({
-          applicationSid: process.env.TWILIO_TWIML_APP_SID,
-          clientName: 'rottie-agent'
-        })
-      );
-
-      const token = capability.toJwt();
-
-      console.log('Generated new capability token');
-      res.json({ token });
-    } catch (error: any) {
-      console.error("Error generating capability token:", error);
-      res.status(500).json({
-        status: 'error',
-        message: error.message
-      });
-    }
-  });
-
   return httpServer;
-}
-
-function formatWhatsAppNumber(phone: string): string {
-  const cleaned = phone.replace(/[^\d+]/g, '');
-
-  if (!cleaned.startsWith('+')) {
-    return `whatsapp:+${cleaned.startsWith('52') ? cleaned : '52' + cleaned}`;
-  }
-  return `whatsapp:${cleaned}`;
 }
