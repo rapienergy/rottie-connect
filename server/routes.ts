@@ -402,22 +402,23 @@ export function registerRoutes(app: Express): Server {
         throw new Error('TWILIO_PHONE_NUMBER environment variable is not set');
       }
 
-      // Format the destination number based on channel
+      // Format numbers based on channel
+      const fromNumber = channel === 'whatsapp'
+        ? formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER)
+        : process.env.TWILIO_PHONE_NUMBER;
+
       const toNumber = channel === 'whatsapp'
         ? formatWhatsAppNumber(contactNumber)
         : formatVoiceNumber(contactNumber);
 
       console.log('\n=== Sending Message ===');
       console.log('Channel:', channel);
-      console.log('From:', process.env.TWILIO_PHONE_NUMBER);
+      console.log('From:', fromNumber);
       console.log('To:', toNumber);
       console.log('Content:', content);
 
-      // Send message with proper from number
       const messagingOptions = {
-        from: channel === 'whatsapp'
-          ? `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`
-          : process.env.TWILIO_PHONE_NUMBER,
+        from: fromNumber,
         to: toNumber,
         body: content
       };
@@ -761,16 +762,16 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  return httpServer;
-}
+  function formatWhatsAppNumber(phone: string): string {
+    // Remove all non-digit characters except plus sign
+    const cleaned = phone.replace(/[^\d+]/g, '');
 
-function formatWhatsAppNumber(phone: string): string {
-  // Remove all non-digit characters except plus sign
-  const cleaned = phone.replace(/[^\d+]/g, '');
-
-  // Format for WhatsApp - all WhatsApp numbers must start with whatsapp:+
-  if (!cleaned.startsWith('+')) {
-    return `whatsapp:+${cleaned.startsWith('52') ? cleaned : '52' + cleaned}`;
+    // Format for WhatsApp - all WhatsApp numbers must start with whatsapp:+
+    if (!cleaned.startsWith('+')) {
+      return `whatsapp:+${cleaned.startsWith('52') ? cleaned : '52' + cleaned}`;
+    }
+    return `whatsapp:${cleaned}`;
   }
-  return `whatsapp:${cleaned}`;
+
+  return httpServer;
 }
