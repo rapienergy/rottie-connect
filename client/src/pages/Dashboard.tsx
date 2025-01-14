@@ -7,7 +7,6 @@ import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
-import { CallHandler } from "@/components/CallHandler";
 
 export function Dashboard() {
   const [selectedNumber, setSelectedNumber] = useState<string | null>(null);
@@ -170,7 +169,6 @@ export function Dashboard() {
           )}
         </div>
       </div>
-      <CallHandler />
     </div>
   );
 }
