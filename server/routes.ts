@@ -144,8 +144,9 @@ export function registerRoutes(app: Express): Server {
       console.log('To:', toNumber);
       console.log('Content:', content);
 
+      // Use Messaging Service for WhatsApp messages
       const messagingOptions = {
-        from: fromNumber,
+        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
         to: toNumber,
         body: content
       };
@@ -192,7 +193,7 @@ export function registerRoutes(app: Express): Server {
       if (error.code === '63007') {
         res.status(400).json({
           message: "WhatsApp channel not found",
-          error: "Please ensure your Twilio WhatsApp channel is properly configured",
+          error: "Please check your Twilio Messaging Service configuration",
           code: error.code,
           details: {
             status: error.status,
