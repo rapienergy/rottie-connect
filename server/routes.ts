@@ -23,7 +23,7 @@ try {
   console.error('Failed to initialize Twilio client:', error);
 }
 
-// Update the WhatsApp number formatting function
+// Update formatWhatsAppNumber function for better number formatting
 function formatWhatsAppNumber(phone: string): string {
   // Remove all non-digit characters except plus sign
   const cleaned = phone.replace(/[^\d+]/g, '');
@@ -434,18 +434,21 @@ export function registerRoutes(app: Express): Server {
         throw new Error('Contact number and content are required');
       }
 
+      if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
+        throw new Error('Messaging Service SID not configured');
+      }
+
       // Format the destination number for WhatsApp
       const toNumber = formatWhatsAppNumber(contactNumber);
-      const fromNumber = formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER || '');
 
       console.log('\n=== Sending WhatsApp Message ===');
       console.log('To:', toNumber);
-      console.log('From:', fromNumber);
       console.log('Content:', content);
+      console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
 
-      // Send message via Twilio WhatsApp
+      // Send message via Twilio Messaging Service
       const messagingOptions = {
-        from: fromNumber,
+        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
         to: toNumber,
         body: content
       };
@@ -697,8 +700,12 @@ export function registerRoutes(app: Express): Server {
         throw new Error('Messaging Service SID not configured');
       }
 
+      console.log('\n=== Testing Messaging Service Configuration ===');
+      console.log('Messaging Service SID:', messagingServiceSid);
+
       // Get Messaging Service details
       const service = await twilioClient.messaging.v1.services(messagingServiceSid).fetch();
+      console.log('Service details:', service.friendlyName);
 
       // Get phone numbers associated with the Messaging Service
       const phoneNumbers = await twilioClient.messaging.v1
@@ -706,32 +713,23 @@ export function registerRoutes(app: Express): Server {
         .phoneNumbers
         .list();
 
-      const primaryNumber = phoneNumbers.find(num => num.phoneNumber.endsWith('6311'));
-
-      if (!primaryNumber) {
-        throw new Error('Primary phone number not found in Messaging Service');
-      }
-
-      // Send test message using Messaging Service
-      const testMessage = await twilioClient.messages.create({
-        messagingServiceSid,
-        to: primaryNumber.phoneNumber, // Send to our own number for testing
-        body: "Test message from Messaging Service"
+      console.log('Phone numbers:', phoneNumbers.length);
+      phoneNumbers.forEach(num => {
+        console.log('- Number:', num.phoneNumber);
+        console.log('  Capabilities:', num.capabilities);
       });
 
+      const primaryNumber = phoneNumbers.find(num => num.phoneNumber.endsWith('6311'));
+
       res.json({
-        status: "success",
+        status: 'success',
         service: {
           sid: service.sid,
           friendlyName: service.friendlyName,
-          inboundRequestUrl: service.inboundRequestUrl
+          inboundRequestUrl: service.inboundRequestUrl,
+          useInboundWebhookOnNumber: service.useInboundWebhookOnNumber
         },
-        message: {
-          sid: testMessage.sid,
-          status: testMessage.status,
-          from: testMessage.from,
-          to: testMessage.to
-        },
+        message: 'Messaging Service configuration verified',
         phoneNumbers: phoneNumbers.map(num => ({
           sid: num.sid,
           phoneNumber: num.phoneNumber,
