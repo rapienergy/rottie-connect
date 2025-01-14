@@ -24,13 +24,21 @@ export const messages = pgTable("messages", {
   }>(),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => ({
-  // Add indexes for faster queries
   contactNumberIdx: index("contact_number_idx").on(table.contactNumber),
   twilioSidIdx: index("twilio_sid_idx").on(table.twilioSid),
   createdAtIdx: index("created_at_idx").on(table.createdAt)
 }));
 
+// Export schemas
 export const insertMessageSchema = createInsertSchema(messages);
 export const selectMessageSchema = createSelectSchema(messages);
 
+// Export type
 export type Message = typeof messages.$inferSelect;
+
+// Export all schema objects
+export default {
+  messages,
+  insertMessageSchema,
+  selectMessageSchema
+};

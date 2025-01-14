@@ -28,11 +28,6 @@ function formatWhatsAppNumber(phone: string): string {
   // Remove all non-digit characters except plus sign
   const cleaned = phone.replace(/[^\d+]/g, '');
 
-  // Handle special case for testing/sandbox
-  if (process.env.NODE_ENV === 'development') {
-    return 'whatsapp:+14155238886'; // Twilio's WhatsApp sandbox number
-  }
-
   // Format for WhatsApp - all WhatsApp numbers must start with whatsapp:+
   if (!cleaned.startsWith('+')) {
     return `whatsapp:+${cleaned.startsWith('52') ? cleaned : '52' + cleaned}`;
@@ -116,7 +111,7 @@ export function registerRoutes(app: Express): Server {
     });
   });
 
-  // Message sending endpoint with WhatsApp sandbox support
+  // Message sending endpoint
   app.post("/api/messages", async (req, res) => {
     try {
       if (!twilioClient) {
@@ -134,37 +129,25 @@ export function registerRoutes(app: Express): Server {
         throw new Error('TWILIO_PHONE_NUMBER environment variable is not set');
       }
 
-      // For development/testing, use WhatsApp sandbox
-      let fromNumber;
-      if (process.env.NODE_ENV === 'development' && channel === 'whatsapp') {
-        fromNumber = 'whatsapp:+14155238886'; // Twilio's WhatsApp sandbox number
-        console.log('Using WhatsApp sandbox number for development');
-      } else {
-        fromNumber = channel === 'whatsapp'
-          ? formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER)
-          : process.env.TWILIO_PHONE_NUMBER;
-      }
+      // Format numbers based on channel
+      const fromNumber = channel === 'whatsapp'
+        ? formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER)
+        : process.env.TWILIO_PHONE_NUMBER;
 
       const toNumber = channel === 'whatsapp'
         ? formatWhatsAppNumber(contactNumber)
         : formatVoiceNumber(contactNumber);
 
       console.log('\n=== Sending Message ===');
-      console.log('Environment:', process.env.NODE_ENV);
       console.log('Channel:', channel);
       console.log('From:', fromNumber);
       console.log('To:', toNumber);
       console.log('Content:', content);
 
-      // Add special prefix for WhatsApp sandbox testing
-      const messageBody = process.env.NODE_ENV === 'development' && channel === 'whatsapp'
-        ? `join butter-thumb\n${content}` // WhatsApp sandbox join code
-        : content;
-
       const messagingOptions = {
         from: fromNumber,
         to: toNumber,
-        body: messageBody
+        body: content
       };
 
       console.log('Sending with options:', messagingOptions);
