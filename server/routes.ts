@@ -431,7 +431,11 @@ export function registerRoutes(app: Express): Server {
       const { contactNumber, content, channel = 'whatsapp' } = req.body;
 
       if (!contactNumber || !content) {
-        throw new Error('Contact number and content are required');
+        return res.status(400).json({
+          error: true,
+          code: 'INVALID_REQUEST',
+          message: 'Contact number and content are required'
+        });
       }
 
       if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
@@ -445,6 +449,7 @@ export function registerRoutes(app: Express): Server {
       console.log('To:', toNumber);
       console.log('Content:', content);
       console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
+      console.log('API Key:', req.headers['x-api-key'] ? 'Present' : 'Not Present');
 
       // Send message via Twilio Messaging Service
       const messagingOptions = {
@@ -483,7 +488,15 @@ export function registerRoutes(app: Express): Server {
         message: message[0]
       });
 
-      res.json(message[0]);
+      // Return standardized API response
+      res.json({
+        success: true,
+        data: {
+          message: message[0],
+          twilioSid: twilioMessage.sid,
+          status: twilioMessage.status
+        }
+      });
     } catch (error: any) {
       console.error("\n=== WhatsApp Message Error ===");
       console.error("Error details:", {
@@ -494,10 +507,14 @@ export function registerRoutes(app: Express): Server {
       });
       console.error("==========================\n");
 
-      res.status(500).json({
-        message: "Failed to send message",
-        error: error.message,
-        code: error.code || 'UNKNOWN_ERROR'
+      // Return standardized error response
+      res.status(error.status || 500).json({
+        success: false,
+        error: {
+          code: error.code || 'MESSAGE_SEND_FAILED',
+          message: error.message || 'Failed to send message',
+          details: error.moreInfo || undefined
+        }
       });
     }
   });
