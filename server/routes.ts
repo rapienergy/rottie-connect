@@ -131,11 +131,11 @@ export function registerRoutes(app: Express): Server {
 
       // Format numbers based on channel
       const fromNumber = channel === 'whatsapp'
-        ? formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER)
+        ? `whatsapp:+${process.env.TWILIO_PHONE_NUMBER.replace(/[^\d]/g, '')}`
         : process.env.TWILIO_PHONE_NUMBER;
 
       const toNumber = channel === 'whatsapp'
-        ? formatWhatsAppNumber(contactNumber)
+        ? `whatsapp:+${contactNumber.replace(/[^\d]/g, '')}`
         : formatVoiceNumber(contactNumber);
 
       console.log('\n=== Sending Message ===');
@@ -187,6 +187,20 @@ export function registerRoutes(app: Express): Server {
         moreInfo: error.moreInfo,
         details: error.details
       });
+
+      // Handle specific channel errors
+      if (error.code === '63007') {
+        res.status(400).json({
+          message: "WhatsApp channel not found",
+          error: "Please ensure your Twilio WhatsApp channel is properly configured",
+          code: error.code,
+          details: {
+            status: error.status,
+            moreInfo: error.moreInfo
+          }
+        });
+        return;
+      }
 
       res.status(500).json({
         message: "Failed to send message",
