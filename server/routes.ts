@@ -23,6 +23,35 @@ try {
   console.error('Failed to initialize Twilio client:', error);
 }
 
+// Update the WhatsApp number formatting function
+function formatWhatsAppNumber(phone: string): string {
+  // Remove all non-digit characters except plus sign
+  const cleaned = phone.replace(/[^\d+]/g, '');
+
+  // If number already starts with "whatsapp:", return as is
+  if (phone.startsWith('whatsapp:')) {
+    return phone;
+  }
+
+  // Handle Mexican numbers with country code
+  if (cleaned.startsWith('52') && cleaned.length === 12) {
+    return `whatsapp:+${cleaned}`;
+  }
+
+  // Add Mexico country code for 10-digit numbers
+  if (cleaned.length === 10) {
+    return `whatsapp:+52${cleaned}`;
+  }
+
+  // If already has plus and proper length, just add whatsapp: prefix
+  if (cleaned.startsWith('+')) {
+    return `whatsapp:${cleaned}`;
+  }
+
+  // Default: add whatsapp:+52 if no country code
+  return `whatsapp:+52${cleaned}`;
+}
+
 // Update formatVoiceNumber function for better number formatting
 function formatVoiceNumber(phone: string): string {
   // Remove all non-digit characters except plus sign
@@ -384,7 +413,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Send message using Messaging Service (supports SMS, WhatsApp, etc.)
+  // Update the message sending endpoint with better WhatsApp handling
   app.post("/api/messages", async (req, res) => {
     try {
       if (!twilioClient) {
@@ -397,17 +426,17 @@ export function registerRoutes(app: Express): Server {
         throw new Error('Contact number and content are required');
       }
 
-      // Format the destination number based on channel
+      // Format the destination number for WhatsApp
       const toNumber = formatWhatsAppNumber(contactNumber);
 
-      console.log('Sending message via Messaging Service:');
-      console.log('Channel:', channel);
+      console.log('\n=== Sending WhatsApp Message ===');
       console.log('To:', toNumber);
+      console.log('From:', `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`);
       console.log('Content:', content);
 
-      // Send message via Twilio Messaging Service
+      // Send message via Twilio WhatsApp
       const messagingOptions = {
-        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+        from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
         to: toNumber,
         body: content
       };
@@ -415,18 +444,23 @@ export function registerRoutes(app: Express): Server {
       const twilioMessage = await twilioClient.messages.create(messagingOptions);
 
       console.log('Message sent successfully:', twilioMessage.sid);
+      console.log('Message status:', twilioMessage.status);
+      console.log('==========================\n');
 
       // Store message in database
       const message = await db
         .insert(messages)
         .values({
-          contactNumber,
+          contactNumber: contactNumber.replace('whatsapp:', ''),
           content,
           direction: "rottie",
           status: twilioMessage.status,
           twilioSid: twilioMessage.sid,
           metadata: {
-            channel
+            channel: 'whatsapp',
+            profile: {
+              name: twilioMessage.to
+            }
           },
         })
         .returning();
@@ -439,7 +473,15 @@ export function registerRoutes(app: Express): Server {
 
       res.json(message[0]);
     } catch (error: any) {
-      console.error("Error sending message:", error);
+      console.error("\n=== WhatsApp Message Error ===");
+      console.error("Error details:", {
+        message: error.message,
+        code: error.code,
+        status: error.status,
+        moreInfo: error.moreInfo
+      });
+      console.error("==========================\n");
+
       res.status(500).json({
         message: "Failed to send message",
         error: error.message,
@@ -698,15 +740,4 @@ export function registerRoutes(app: Express): Server {
   });
 
   return httpServer;
-}
-
-function formatWhatsAppNumber(phone: string): string {
-  // Remove all non-digit characters except plus sign
-  const cleaned = phone.replace(/[^\d+]/g, '');
-
-  // Format for WhatsApp - all WhatsApp numbers must start with whatsapp:+
-  if (!cleaned.startsWith('+')) {
-    return `whatsapp:+${cleaned.startsWith('52') ? cleaned : '52' + cleaned}`;
-  }
-  return `whatsapp:${cleaned}`;
 }

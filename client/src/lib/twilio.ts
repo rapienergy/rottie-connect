@@ -9,16 +9,40 @@ export const twilioConfigSchema = z.object({
 export type TwilioFormData = z.infer<typeof twilioConfigSchema>;
 
 export function formatPhoneNumber(phone: string): string {
-  const cleaned = phone.replace(/\D/g, "");
-  if (cleaned.length === 10) {
-    return `+1${cleaned}`;
-  } else if (cleaned.length === 11 && cleaned.startsWith("1")) {
+  // Remove whatsapp: prefix if present
+  const withoutPrefix = phone.replace('whatsapp:', '');
+
+  // Remove all non-digit characters except plus sign
+  const cleaned = withoutPrefix.replace(/[^\d+]/g, '');
+
+  // Handle Mexican numbers
+  if (cleaned.startsWith('52') && cleaned.length === 12) {
     return `+${cleaned}`;
   }
-  return phone;
+
+  // Add Mexico country code for 10-digit numbers
+  if (cleaned.length === 10) {
+    return `+52${cleaned}`;
+  }
+
+  // If already has plus and proper length, return as is
+  if (cleaned.startsWith('+') && cleaned.length >= 12) {
+    return cleaned;
+  }
+
+  // Default: add +52 if no country code
+  return cleaned.startsWith('+') ? cleaned : `+52${cleaned}`;
 }
 
 export function validatePhoneNumber(phone: string): boolean {
-  const phoneRegex = /^\+?1?\d{10,11}$/;
-  return phoneRegex.test(phone.replace(/\D/g, ""));
+  // Remove whatsapp: prefix and any other non-digit characters except plus
+  const cleaned = phone.replace('whatsapp:', '').replace(/[^\d+]/g, '');
+
+  // Valid formats:
+  // +52XXXXXXXXXX (Mexican format with country code)
+  // +1XXXXXXXXXX (US/Canada format)
+  // XXXXXXXXXX (10 digits, will be assumed Mexican)
+  const phoneRegex = /^\+?(?:52|1)?\d{10}$/;
+
+  return phoneRegex.test(cleaned);
 }
