@@ -52,19 +52,18 @@ app.use((req, res, next) => {
 
 (async () => {
   try {
-    // Verify required environment variables
+    // Verify required environment variables at startup
     const requiredEnvVars = [
       'TWILIO_ACCOUNT_SID',
       'TWILIO_AUTH_TOKEN',
       'TWILIO_PHONE_NUMBER',
-      'TWILIO_MESSAGING_SERVICE_SID',
       'BASE_URL',
       'API_KEY'
     ];
 
     const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
     if (missingVars.length > 0) {
-      console.error('Missing required environment variables:', missingVars.join(', '));
+      throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
     }
 
     // Register API routes first
