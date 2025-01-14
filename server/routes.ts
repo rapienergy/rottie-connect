@@ -6,6 +6,7 @@ import { messages } from "@db/schema";
 import { eq, desc } from "drizzle-orm";
 import twilio from "twilio";
 import type { Twilio } from "twilio";
+import { randomBytes } from 'crypto';
 
 // Initialize Twilio client with error handling
 let twilioClient: Twilio | null = null;
@@ -86,6 +87,43 @@ function formatVoiceNumber(phone: string): string {
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
+
+  // Add API key generation endpoint
+  app.post("/api/keys/generate", async (req, res) => {
+    try {
+      // In production, this endpoint should be protected and only accessible by admins
+      if (process.env.NODE_ENV === 'production' && !req.headers['x-admin-key']) {
+        return res.status(401).json({
+          error: true,
+          message: 'Unauthorized. Admin access required.',
+          code: 'UNAUTHORIZED'
+        });
+      }
+
+      const apiKey = `rk_${randomBytes(24).toString('hex')}`;
+
+      // In a production environment, store this key in a database
+      // For now, we'll just return it
+      res.json({
+        success: true,
+        data: {
+          apiKey,
+          createdAt: new Date().toISOString(),
+          expiresAt: null, // Implement expiration if needed
+          scopes: ['messages:write', 'calls:write'] // Implement scopes if needed
+        }
+      });
+    } catch (error: any) {
+      console.error('Error generating API key:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'KEY_GENERATION_FAILED',
+          message: error.message
+        }
+      });
+    }
+  });
 
   // Voice call endpoint for landline calls (placed first to ensure it's registered before other routes)
   app.post("/api/voice/calls", async (req, res) => {

@@ -1,6 +1,8 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import swaggerUi from 'swagger-ui-express';
+import { swaggerDocument } from './swagger';
 
 const app = express();
 
@@ -8,12 +10,21 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Serve API Documentation
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: "RottieConnect API Documentation",
+  customfavIcon: "/favicon.ico"
+}));
+
 // API Key authentication middleware
 const validateApiKey = (req: Request, res: Response, next: NextFunction) => {
   const apiKey = req.headers['x-api-key'];
 
-  // Skip API key validation for internal routes and development
-  if (!req.path.startsWith('/api') || process.env.NODE_ENV === 'development') {
+  // Skip API key validation for internal routes, documentation and development
+  if (!req.path.startsWith('/api') || 
+      req.path.startsWith('/api-docs') || 
+      process.env.NODE_ENV === 'development') {
     return next();
   }
 
