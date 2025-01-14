@@ -748,5 +748,26 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Test WhatsApp number formatting
+  app.get("/api/twilio/test-format", async (req, res) => {
+    const testNumbers = [
+      process.env.TWILIO_PHONE_NUMBER || '',  // Business number
+      '5215512345678',                       // With country code
+      '5512345678',                          // Without country code
+      'whatsapp:+5215512345678',            // Already formatted
+      '+5215512345678'                       // With plus
+    ];
+
+    const formatted = testNumbers.map(num => ({
+      original: num,
+      formatted: formatWhatsAppNumber(num)
+    }));
+
+    res.json({
+      businessNumber: process.env.TWILIO_PHONE_NUMBER,
+      testResults: formatted
+    });
+  });
+
   return httpServer;
 }
