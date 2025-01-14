@@ -5,21 +5,12 @@ import { db } from "@db";
 import { messages } from "@db/schema";
 import { eq, desc } from "drizzle-orm";
 import twilio from "twilio";
-import type { Twilio } from "twilio";
 
 // Initialize Twilio client
-let twilioClient: Twilio | null = null;
-
-try {
-  if (!process.env.TWILIO_ACCOUNT_SID && !process.env.TWILIO_AUTH_TOKEN) {
-    console.error('Missing Twilio credentials');
-  } else {
-    twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-    console.log('Twilio client initialized successfully');
-  }
-} catch (error) {
-  console.error('Failed to initialize Twilio client:', error);
-}
+const twilioClient = twilio(
+  process.env.TWILIO_ACCOUNT_SID!, 
+  process.env.TWILIO_AUTH_TOKEN!
+);
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
@@ -74,45 +65,37 @@ export function registerRoutes(app: Express): Server {
     });
   });
 
-  // Message endpoints
+  // WhatsApp message endpoint
   app.post("/api/messages", async (req, res) => {
     try {
-      if (!twilioClient) {
-        throw new Error('Twilio client not initialized');
-      }
-
       const { contactNumber, content } = req.body;
 
       if (!contactNumber || !content) {
         return res.status(400).json({
-          success: false,
-          error: {
-            message: 'Contact number and content are required',
-            code: 'MISSING_REQUIRED_FIELDS'
-          }
+          error: 'Bad Request',
+          message: 'Contact number and content are required'
         });
       }
 
-      const toNumber = `whatsapp:${contactNumber}`;
-      console.log('\n=== Sending WhatsApp message ===');
-      console.log('To:', toNumber);
-      console.log('Content:', content);
+      const formattedNumber = contactNumber.startsWith('+') ? contactNumber : `+${contactNumber}`;
 
-      const messagingOptions = {
+      console.log('Sending WhatsApp message:', {
+        to: formattedNumber,
+        content: content
+      });
+
+      const twilioMessage = await twilioClient.messages.create({
         from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
-        to: toNumber,
-        body: content,
-        statusCallback: `${process.env.BASE_URL}/webhook`,
-        persistentAction: ['status_callback'],
-      };
+        to: `whatsapp:${formattedNumber}`,
+        body: content
+      });
 
-      const twilioMessage = await twilioClient.messages.create(messagingOptions);
-      console.log('Message sent successfully:', twilioMessage.sid);
+      console.log('Message sent:', twilioMessage.sid);
 
       const [message] = await db
         .insert(messages)
         .values({
-          contactNumber,
+          contactNumber: formattedNumber,
           content,
           direction: "rottie",
           status: twilioMessage.status,
@@ -120,7 +103,7 @@ export function registerRoutes(app: Express): Server {
           metadata: {
             channel: 'whatsapp',
             profile: null
-          },
+          }
         })
         .returning();
 
@@ -134,9 +117,7 @@ export function registerRoutes(app: Express): Server {
         message: {
           ...message,
           twilioStatus: twilioMessage.status,
-          twilioSid: twilioMessage.sid,
-          to: twilioMessage.to,
-          from: twilioMessage.from
+          twilioSid: twilioMessage.sid
         }
       });
     } catch (error: any) {
@@ -145,8 +126,7 @@ export function registerRoutes(app: Express): Server {
         success: false,
         error: {
           message: error.message,
-          code: error.code || 'MESSAGE_SEND_ERROR',
-          details: error.details || {}
+          code: error.code || 'MESSAGE_SEND_ERROR'
         }
       });
     }
@@ -207,22 +187,11 @@ export function registerRoutes(app: Express): Server {
           acc[msg.contactNumber] = {
             contactNumber: msg.contactNumber,
             contactName: msg.contactName,
-            latestMessage: {
-              content: msg.content,
-              direction: msg.direction,
-              status: msg.status,
-              createdAt: msg.createdAt
-            },
+            messages: [],
             channel: msg.metadata.channel || 'whatsapp'
           };
-        } else if (new Date(msg.createdAt) > new Date(acc[msg.contactNumber].latestMessage.createdAt)) {
-          acc[msg.contactNumber].latestMessage = {
-            content: msg.content,
-            direction: msg.direction,
-            status: msg.status,
-            createdAt: msg.createdAt
-          };
         }
+        acc[msg.contactNumber].messages.push(msg);
         return acc;
       }, {});
 

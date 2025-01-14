@@ -12,7 +12,7 @@ app.use(express.urlencoded({ extended: false }));
 app.use('/api', (req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
@@ -52,22 +52,7 @@ app.use((req, res, next) => {
 
 (async () => {
   try {
-    // Verify required environment variables at startup
-    const requiredEnvVars = [
-      'TWILIO_ACCOUNT_SID',
-      'TWILIO_AUTH_TOKEN',
-      'TWILIO_PHONE_NUMBER',
-      'BASE_URL',
-      'API_KEY'
-    ];
-
-    const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
-    if (missingVars.length > 0) {
-      throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
-    }
-
     // Register API routes first
-    console.log('Initializing server...');
     const server = registerRoutes(app);
 
     // Error handling middleware
@@ -78,7 +63,7 @@ app.use((req, res, next) => {
       res.status(status).json({ message });
     });
 
-    // Only setup static file and Vite middleware after API routes
+    // Setup static files and Vite middleware
     if (app.get("env") === "development") {
       await setupVite(app, server);
     } else {
@@ -89,8 +74,6 @@ app.use((req, res, next) => {
     const PORT = 5000;
     server.listen(PORT, "0.0.0.0", () => {
       log(`Server running on port ${PORT}`);
-      log('Environment:', app.get('env'));
-      log('Base URL:', process.env.BASE_URL);
     });
   } catch (error) {
     console.error('Failed to start server:', error);
