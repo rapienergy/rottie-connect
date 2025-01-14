@@ -397,30 +397,43 @@ export function registerRoutes(app: Express): Server {
         throw new Error('Contact number and content are required');
       }
 
-      // Format the destination number based on channel
-      const toNumber = formatWhatsAppNumber(contactNumber);
+      // Ensure required environment variables are set
+      if (!process.env.TWILIO_PHONE_NUMBER) {
+        throw new Error('TWILIO_PHONE_NUMBER environment variable is not set');
+      }
 
-      console.log('Sending message via Messaging Service:');
+      // Format the destination number based on channel
+      const toNumber = channel === 'whatsapp'
+        ? formatWhatsAppNumber(contactNumber)
+        : formatVoiceNumber(contactNumber);
+
+      console.log('\n=== Sending Message ===');
       console.log('Channel:', channel);
+      console.log('From:', process.env.TWILIO_PHONE_NUMBER);
       console.log('To:', toNumber);
       console.log('Content:', content);
 
-      // Send message via Twilio Messaging Service
+      // Send message with proper from number
       const messagingOptions = {
-        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+        from: channel === 'whatsapp'
+          ? `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`
+          : process.env.TWILIO_PHONE_NUMBER,
         to: toNumber,
         body: content
       };
 
+      console.log('Sending with options:', messagingOptions);
+
       const twilioMessage = await twilioClient.messages.create(messagingOptions);
 
       console.log('Message sent successfully:', twilioMessage.sid);
+      console.log('=======================\n');
 
       // Store message in database
       const message = await db
         .insert(messages)
         .values({
-          contactNumber,
+          contactNumber: contactNumber.replace('whatsapp:', ''),
           content,
           direction: "rottie",
           status: twilioMessage.status,
@@ -440,10 +453,21 @@ export function registerRoutes(app: Express): Server {
       res.json(message[0]);
     } catch (error: any) {
       console.error("Error sending message:", error);
+      console.error("Error details:", {
+        code: error.code,
+        status: error.status,
+        moreInfo: error.moreInfo,
+        details: error.details
+      });
+
       res.status(500).json({
         message: "Failed to send message",
         error: error.message,
-        code: error.code || 'UNKNOWN_ERROR'
+        code: error.code || 'UNKNOWN_ERROR',
+        details: {
+          status: error.status,
+          moreInfo: error.moreInfo
+        }
       });
     }
   });
