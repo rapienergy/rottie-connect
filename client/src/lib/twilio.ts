@@ -12,10 +12,10 @@ export function formatPhoneNumber(phone: string): string {
   // Remove whatsapp: prefix if present
   const withoutPrefix = phone.replace('whatsapp:', '');
 
-  // Remove all non-digit characters except plus sign
-  const cleaned = withoutPrefix.replace(/[^\d+]/g, '');
+  // Remove all spaces and non-digit characters except plus sign
+  const cleaned = withoutPrefix.replace(/\s+/g, '').replace(/[^\d+]/g, '');
 
-  // Handle Mexican numbers
+  // Handle Mexican numbers with country code
   if (cleaned.startsWith('52') && cleaned.length === 12) {
     return `+${cleaned}`;
   }
@@ -35,8 +35,8 @@ export function formatPhoneNumber(phone: string): string {
 }
 
 export function validatePhoneNumber(phone: string): boolean {
-  // Remove whatsapp: prefix and any other non-digit characters except plus
-  const cleaned = phone.replace('whatsapp:', '').replace(/[^\d+]/g, '');
+  // Remove whatsapp: prefix, spaces, and any other non-digit characters except plus
+  const cleaned = phone.replace('whatsapp:', '').replace(/\s+/g, '').replace(/[^\d+]/g, '');
 
   // Valid formats:
   // +52XXXXXXXXXX (Mexican format with country code)

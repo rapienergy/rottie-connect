@@ -33,6 +33,14 @@ function formatWhatsAppNumber(phone: string): string {
     return phone;
   }
 
+  // Format Mexican WhatsApp business number (remove spaces)
+  if (process.env.TWILIO_PHONE_NUMBER) {
+    const fromNumber = process.env.TWILIO_PHONE_NUMBER.replace(/\s+/g, '');
+    if (phone === fromNumber) {
+      return `whatsapp:${fromNumber}`;
+    }
+  }
+
   // Handle Mexican numbers with country code
   if (cleaned.startsWith('52') && cleaned.length === 12) {
     return `whatsapp:+${cleaned}`;
@@ -428,15 +436,16 @@ export function registerRoutes(app: Express): Server {
 
       // Format the destination number for WhatsApp
       const toNumber = formatWhatsAppNumber(contactNumber);
+      const fromNumber = formatWhatsAppNumber(process.env.TWILIO_PHONE_NUMBER || '');
 
       console.log('\n=== Sending WhatsApp Message ===');
       console.log('To:', toNumber);
-      console.log('From:', `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`);
+      console.log('From:', fromNumber);
       console.log('Content:', content);
 
       // Send message via Twilio WhatsApp
       const messagingOptions = {
-        from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
+        from: fromNumber,
         to: toNumber,
         body: content
       };
