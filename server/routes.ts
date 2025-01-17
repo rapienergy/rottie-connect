@@ -114,9 +114,9 @@ function validatePhoneNumber(phone: string): { isValid: boolean; error?: string 
   const phoneRegex = /^\+?(?:52|1)?\d{10}$/;
 
   if (!phoneRegex.test(cleaned)) {
-    return { 
-      isValid: false, 
-      error: 'Invalid phone number format. Must be a valid Mexican (+52) or US/Canada (+1) number' 
+    return {
+      isValid: false,
+      error: 'Invalid phone number format. Must be a valid Mexican (+52) or US/Canada (+1) number'
     };
   }
 
@@ -512,16 +512,6 @@ export function registerRoutes(app: Express): Server {
           error: true,
           code: 'INVALID_REQUEST',
           message: 'Contact number and content are required'
-        });
-      }
-
-      // Validate phone number format
-      const phoneValidation = validatePhoneNumber(contactNumber);
-      if (!phoneValidation.isValid) {
-        return res.status(400).json({
-          error: true,
-          code: 'INVALID_PHONE_NUMBER',
-          message: phoneValidation.error
         });
       }
 
