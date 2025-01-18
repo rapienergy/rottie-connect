@@ -7,6 +7,8 @@ import { eq, desc } from "drizzle-orm";
 import twilio from "twilio";
 import type { Twilio } from "twilio";
 import { randomBytes } from 'crypto';
+import { AuthService } from "./auth";
+import { z } from "zod";
 
 // Initialize Twilio client with error handling
 let twilioClient: Twilio | null = null;
@@ -122,6 +124,25 @@ function validatePhoneNumber(phone: string): { isValid: boolean; error?: string 
 
   return { isValid: true };
 }
+
+// User registration schema
+const registerSchema = z.object({
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  phoneNumber: z.string().regex(/^\+[1-9]\d{1,14}$/, "Invalid phone number format")
+});
+
+// Login schema
+const loginSchema = z.object({
+  username: z.string(),
+  password: z.string()
+});
+
+// Verification schema
+const verifySchema = z.object({
+  userId: z.number(),
+  code: z.string().length(6)
+});
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
@@ -249,6 +270,154 @@ export function registerRoutes(app: Express): Server {
       });
     }
   });
+
+  // Authentication endpoints
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const { username, password, phoneNumber } = registerSchema.parse(req.body);
+
+      const user = await AuthService.register(username, password, phoneNumber);
+      res.json({
+        success: true,
+        data: {
+          userId: user.id,
+          requiresVerification: true
+        }
+      });
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: error.errors[0].message
+          }
+        });
+      }
+
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'REGISTRATION_FAILED',
+          message: error.message
+        }
+      });
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { username, password } = loginSchema.parse(req.body);
+
+      const result = await AuthService.login(username, password);
+      res.json({
+        success: true,
+        data: result
+      });
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: error.errors[0].message
+          }
+        });
+      }
+
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'LOGIN_FAILED',
+          message: error.message
+        }
+      });
+    }
+  });
+
+  app.post("/api/auth/verify", async (req, res) => {
+    try {
+      const { userId, code } = verifySchema.parse(req.body);
+
+      const result = await AuthService.verifyPhone(userId, code);
+      res.json({
+        success: true,
+        data: result
+      });
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: error.errors[0].message
+          }
+        });
+      }
+
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'VERIFICATION_FAILED',
+          message: error.message
+        }
+      });
+    }
+  });
+
+  app.post("/api/auth/resend-code", async (req, res) => {
+    try {
+      const { userId } = z.object({ userId: z.number() }).parse(req.body);
+
+      await AuthService.requestNewCode(userId);
+      res.json({
+        success: true,
+        message: "Verification code sent"
+      });
+    } catch (error: any) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'CODE_RESEND_FAILED',
+          message: error.message
+        }
+      });
+    }
+  });
+
+  // Middleware to protect routes
+  const authenticateToken = async (req: any, res: any, next: any) => {
+    const token = req.headers.authorization?.split(' ')[1];
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'No token provided'
+        }
+      });
+    }
+
+    const payload = await AuthService.verifyToken(token);
+    if (!payload) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Invalid token'
+        }
+      });
+    }
+
+    req.user = payload;
+    next();
+  };
+
+  // Protected routes
+  app.use('/api/messages', authenticateToken);
+  app.use('/api/conversations', authenticateToken);
+
 
   const wss = new WebSocketServer({
     server: httpServer,
@@ -605,6 +774,7 @@ export function registerRoutes(app: Express): Server {
       });
     }
   });
+
 
 
   // Get all conversations across channels
