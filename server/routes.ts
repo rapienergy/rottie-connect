@@ -7,6 +7,7 @@ import { eq, desc } from "drizzle-orm";
 import twilio from "twilio";
 import type { Twilio } from "twilio";
 import { randomBytes } from 'crypto';
+import { VerificationService } from "./verification";
 
 // Initialize Twilio client with error handling
 let twilioClient: Twilio | null = null;
@@ -869,6 +870,100 @@ export function registerRoutes(app: Express): Server {
       businessNumber: process.env.TWILIO_PHONE_NUMBER,
       testResults: formatted
     });
+  });
+
+  // Send verification code
+  app.post("/api/verify/send", async (req, res) => {
+    try {
+      const { phoneNumber } = req.body;
+
+      if (!phoneNumber) {
+        return res.status(400).json({
+          error: true,
+          code: 'MISSING_PHONE',
+          message: 'Phone number is required'
+        });
+      }
+
+      // Generate and store verification code
+      const code = await VerificationService.createVerification(phoneNumber);
+
+      console.log('\n=== Sending Verification Code ===');
+      console.log('To:', phoneNumber);
+      console.log('Code:', code);
+
+      // Format number for WhatsApp
+      const toNumber = formatWhatsAppNumber(phoneNumber);
+
+      if (!twilioClient || !process.env.TWILIO_MESSAGING_SERVICE_SID) {
+        throw new Error('Twilio client or messaging service not configured');
+      }
+
+      // Send code via WhatsApp
+      const message = await twilioClient.messages.create({
+        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+        to: toNumber,
+        body: `Your RottieConnect verification code is: ${code}\n\nThis code will expire in 5 minutes.`
+      });
+
+      console.log('Message sent successfully:', message.sid);
+      console.log('==========================\n');
+
+      res.json({
+        success: true,
+        message: 'Verification code sent successfully'
+      });
+    } catch (error: any) {
+      console.error("Error sending verification code:", error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: error.code || 'VERIFICATION_SEND_FAILED',
+          message: error.message || 'Failed to send verification code'
+        }
+      });
+    }
+  });
+
+  // Verify code
+  app.post("/api/verify/check", async (req, res) => {
+    try {
+      const { phoneNumber, code } = req.body;
+
+      if (!phoneNumber || !code) {
+        return res.status(400).json({
+          error: true,
+          code: 'MISSING_FIELDS',
+          message: 'Phone number and verification code are required'
+        });
+      }
+
+      const isValid = await VerificationService.verifyCode(phoneNumber, code);
+
+      if (!isValid) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_CODE',
+            message: 'Invalid or expired verification code'
+          }
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Code verified successfully'
+      });
+    } catch (error: any) {
+      console.error("Error verifying code:", error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: error.code || 'VERIFICATION_CHECK_FAILED',
+          message: error.message || 'Failed to verify code'
+        }
+      });
+    }
   });
 
   return httpServer;
