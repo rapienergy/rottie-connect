@@ -10,7 +10,8 @@ export class VerificationService {
   private static COOLDOWN_MINUTES = 15;
 
   static generateCode(): string {
-    return randomInt(100000, 999999).toString();
+    // Generate a random 6-digit number (100000-999999)
+    return randomInt(100000, 999999).toString().padStart(6, '0');
   }
 
   static async createVerification(phoneNumber: string): Promise<string> {
