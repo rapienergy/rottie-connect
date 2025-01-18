@@ -225,6 +225,11 @@ export class AuthService {
       throw new Error("Invalid credentials");
     }
 
+    // Generate and return token immediately, bypassing verification
+    const token = await this.generateToken(user);
+    return { user, token };
+
+    /* Commented out 2FA code for future use
     // For verified users, return token immediately
     if (user.isVerified) {
       const token = await this.generateToken(user);
@@ -243,6 +248,7 @@ export class AuthService {
 
     await this.sendVerificationCode(user.phoneNumber, code);
     return { user, requiresVerification: true };
+    */
   }
 
   // Verify user's phone number
