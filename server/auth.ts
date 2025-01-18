@@ -5,16 +5,40 @@ import { db } from "@db";
 import { users, verificationCodes, type User } from "@db/schema";
 import { eq, and, gte } from "drizzle-orm";
 import twilio from "twilio";
+import type { Twilio } from "twilio";
 
 const JWT_SECRET = new TextEncoder().encode(process.env.REPL_ID || "rottie-connect-secret");
 const VERIFICATION_CODE_LENGTH = 6;
 const VERIFICATION_CODE_EXPIRY = 10 * 60 * 1000; // 10 minutes
 
 // Initialize Twilio client
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
+let twilioClient: Twilio | null = null;
+try {
+  if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) {
+    console.error('Missing required Twilio credentials');
+  } else {
+    twilioClient = twilio(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN
+    );
+    console.log('Twilio client initialized successfully');
+  }
+} catch (error) {
+  console.error('Failed to initialize Twilio client:', error);
+}
+
+function formatWhatsAppNumber(phone: string): string {
+  // Remove all non-digit characters except plus sign
+  const cleaned = phone.replace(/[^\d+]/g, '');
+
+  // If number already starts with "whatsapp:", return as is
+  if (phone.startsWith('whatsapp:')) {
+    return phone;
+  }
+
+  // Add whatsapp: prefix and ensure proper format
+  return `whatsapp:${cleaned.startsWith('+') ? cleaned : '+' + cleaned}`;
+}
 
 export class AuthService {
   // Generate a random verification code
@@ -60,41 +84,38 @@ export class AuthService {
       .sign(JWT_SECRET);
   }
 
-  // Verify JWT token
-  static async verifyToken(token: string) {
-    try {
-      const { payload } = await jwtVerify(token, JWT_SECRET);
-      return payload;
-    } catch {
-      return null;
-    }
-  }
-
-  // Send verification code via SMS
+  // Send verification code via WhatsApp
   private static async sendVerificationCode(phoneNumber: string, code: string) {
     try {
-      console.log('========================================');
-      console.log('Verification code details:');
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      console.log('\n=== Sending WhatsApp Verification Code ===');
       console.log('Phone:', phoneNumber);
       console.log('Code:', code);
-      console.log('========================================');
 
-      // Skip actual SMS sending in development
+      // Skip actual WhatsApp sending in development
       if (process.env.NODE_ENV === 'development') {
-        console.log('Development mode: SMS sending skipped');
+        console.log('Development mode: WhatsApp sending skipped');
+        console.log('==========================\n');
         return true;
       }
+
+      const whatsappNumber = formatWhatsAppNumber(phoneNumber);
+      console.log('Formatted WhatsApp number:', whatsappNumber);
 
       const message = await twilioClient.messages.create({
         body: `Your RottieConnect verification code is: ${code}`,
         messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
-        to: phoneNumber
+        to: whatsappNumber
       });
 
-      console.log('Verification SMS sent:', message.sid);
+      console.log('Verification WhatsApp sent:', message.sid);
+      console.log('==========================\n');
       return true;
     } catch (error) {
-      console.error('Failed to send verification SMS:', error);
+      console.error('Failed to send verification WhatsApp:', error);
       return false;
     }
   }
@@ -137,6 +158,16 @@ export class AuthService {
     } catch (error) {
       console.error('Failed to initialize default user:', error);
       throw error;
+    }
+  }
+
+  // Verify JWT token
+  static async verifyToken(token: string) {
+    try {
+      const { payload } = await jwtVerify(token, JWT_SECRET);
+      return payload;
+    } catch {
+      return null;
     }
   }
 
