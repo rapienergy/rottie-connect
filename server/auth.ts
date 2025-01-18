@@ -32,7 +32,12 @@ export class AuthService {
 
   // Verify password using Argon2
   private static async verifyPassword(hash: string, password: string): Promise<boolean> {
-    return argon2.verify(hash, password);
+    try {
+      return await argon2.verify(hash, password);
+    } catch (error) {
+      console.error('Password verification error:', error);
+      return false;
+    }
   }
 
   // Generate JWT token
@@ -62,12 +67,34 @@ export class AuthService {
         messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
         to: phoneNumber
       });
-      
+
       console.log('Verification SMS sent:', message.sid);
       return true;
     } catch (error) {
       console.error('Failed to send verification SMS:', error);
       return false;
+    }
+  }
+
+  // Initialize the system with the default user
+  static async initializeDefaultUser() {
+    try {
+      const hashedPassword = await this.hashPassword('R11r11r');
+      await db
+        .insert(users)
+        .values({
+          username: 'ROTTIE',
+          password: hashedPassword,
+          phoneNumber: '+549112559311',
+          isVerified: false
+        })
+        .onConflictDoUpdate({
+          target: users.username,
+          set: { password: hashedPassword }
+        });
+      console.log('Default user initialized/updated successfully');
+    } catch (error) {
+      console.error('Failed to initialize default user:', error);
     }
   }
 
@@ -120,15 +147,20 @@ export class AuthService {
 
   // Login user
   static async login(username: string, password: string) {
+    console.log('Attempting login for username:', username);
+
     const user = await db.query.users.findFirst({
       where: eq(users.username, username),
     });
 
     if (!user) {
+      console.log('User not found');
       throw new Error("Invalid credentials");
     }
 
     const isValid = await this.verifyPassword(user.password, password);
+    console.log('Password validation result:', isValid);
+
     if (!isValid) {
       throw new Error("Invalid credentials");
     }
@@ -204,3 +236,6 @@ export class AuthService {
     return true;
   }
 }
+
+// Initialize the default user when the module loads
+AuthService.initializeDefaultUser();
