@@ -1,51 +1,30 @@
 import { Switch, Route, Link } from "wouter";
 import { Dashboard } from "@/pages/Dashboard";
-import AuthPage from "@/pages/auth-page";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { AlertCircle, MessageSquare } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { connectWebSocket, disconnectWebSocket } from "@/lib/socket";
 
 function App() {
-  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
-
   useEffect(() => {
-    if (token) {
-      connectWebSocket();
-      return () => disconnectWebSocket();
-    }
-  }, [token]);
-
-  // If no token, show auth page
-  if (!token) {
-    return <AuthPage />;
-  }
+    connectWebSocket();
+    return () => disconnectWebSocket();
+  }, []);
 
   return (
     <div className="min-h-screen bg-background">
       <nav className="border-b bg-card">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <Link href="/" className="flex flex-col items-start">
-              <div className="flex items-center space-x-2">
-                <MessageSquare className="h-6 w-6" />
-                <span className="font-semibold text-lg">Rottie Connect</span>
-              </div>
-              <span className="text-sm text-muted-foreground ml-8">
-                Rapienergy Enterprise Interactions Platform
-              </span>
-            </Link>
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                localStorage.removeItem('token');
-                setToken(null);
-              }}
-            >
-              Logout
-            </Button>
-          </div>
+          <Link href="/" className="flex flex-col items-start">
+            <div className="flex items-center space-x-2">
+              <MessageSquare className="h-6 w-6" />
+              <span className="font-semibold text-lg">Rottie Connect</span>
+            </div>
+            <span className="text-sm text-muted-foreground ml-8">
+              Rapienergy Enterprise Interactions Platform
+            </span>
+          </Link>
         </div>
       </nav>
 

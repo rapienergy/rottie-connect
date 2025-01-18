@@ -7,8 +7,6 @@ import { eq, desc } from "drizzle-orm";
 import twilio from "twilio";
 import type { Twilio } from "twilio";
 import { randomBytes } from 'crypto';
-import { AuthService } from "./auth";
-import { z } from "zod";
 
 // Initialize Twilio client with error handling
 let twilioClient: Twilio | null = null;
@@ -26,45 +24,41 @@ try {
   console.error('Failed to initialize Twilio client:', error);
 }
 
-// Update formatWhatsAppNumber function for better error handling
+// Update formatWhatsAppNumber function for better number formatting
 function formatWhatsAppNumber(phone: string): string {
-  console.log('Formatting number:', phone);
+  // Remove all non-digit characters except plus sign
+  const cleaned = phone.replace(/[^\d+]/g, '');
 
-  // If already has whatsapp: prefix, validate and return
+  // If number already starts with "whatsapp:", return as is
   if (phone.startsWith('whatsapp:')) {
-    console.log('Number already has whatsapp: prefix');
     return phone;
   }
 
-  // Remove all non-digit characters except plus sign
-  const cleaned = phone.replace(/[^\d+]/g, '');
-  console.log('Cleaned number:', cleaned);
+  // Format Mexican WhatsApp business number (remove spaces)
+  if (process.env.TWILIO_PHONE_NUMBER) {
+    const fromNumber = process.env.TWILIO_PHONE_NUMBER.replace(/\s+/g, '');
+    if (phone === fromNumber) {
+      return `whatsapp:${fromNumber}`;
+    }
+  }
 
-  // Handle Mexican numbers with country code (standard format)
+  // Handle Mexican numbers with country code
   if (cleaned.startsWith('52') && cleaned.length === 12) {
-    const formatted = `whatsapp:+${cleaned}`;
-    console.log('Formatted Mexican number (with country code):', formatted);
-    return formatted;
+    return `whatsapp:+${cleaned}`;
   }
 
   // Add Mexico country code for 10-digit numbers
   if (cleaned.length === 10) {
-    const formatted = `whatsapp:+52${cleaned}`;
-    console.log('Formatted Mexican number (added country code):', formatted);
-    return formatted;
+    return `whatsapp:+52${cleaned}`;
   }
 
-  // If already has plus, just add whatsapp: prefix
+  // If already has plus and proper length, just add whatsapp: prefix
   if (cleaned.startsWith('+')) {
-    const formatted = `whatsapp:${cleaned}`;
-    console.log('Formatted international number:', formatted);
-    return formatted;
+    return `whatsapp:${cleaned}`;
   }
 
-  // Default: add whatsapp: and + prefix
-  const formatted = `whatsapp:+${cleaned}`;
-  console.log('Formatted number (default):', formatted);
-  return formatted;
+  // Default: add whatsapp:+52 if no country code
+  return `whatsapp:+52${cleaned}`;
 }
 
 // Update formatVoiceNumber function for better number formatting
@@ -129,86 +123,8 @@ function validatePhoneNumber(phone: string): { isValid: boolean; error?: string 
   return { isValid: true };
 }
 
-// User registration schema
-const registerSchema = z.object({
-  username: z.string().min(3, "Username must be at least 3 characters"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-  phoneNumber: z.string().regex(/^\+[1-9]\d{1,14}$/, "Invalid phone number format")
-});
-
-// Login schema
-const loginSchema = z.object({
-  username: z.string(),
-  password: z.string()
-});
-
-// Verification schema
-const verifySchema = z.object({
-  userId: z.number(),
-  code: z.string().length(6)
-});
-
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
-
-  // Test WhatsApp endpoint
-  app.get("/api/twilio/test-whatsapp", async (_req, res) => {
-    try {
-      if (!twilioClient) {
-        throw new Error('Twilio client not initialized');
-      }
-
-      if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
-        throw new Error('Messaging Service SID not configured');
-      }
-
-      console.log('\n=== Testing WhatsApp Message ===');
-      const testNumber = '+5215584277211'; // Mexican test number
-      const formattedNumber = formatWhatsAppNumber(testNumber);
-      console.log('To:', formattedNumber);
-
-      // Send test message via Twilio Messaging Service
-      const message = await twilioClient.messages.create({
-        body: "Test message from RottieConnect",
-        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
-        to: formattedNumber
-      });
-
-      console.log('Message sent successfully:', message.sid);
-      console.log('Message status:', message.status);
-      console.log('From:', message.from);
-      console.log('To:', message.to);
-      console.log('==========================\n');
-
-      res.json({
-        status: 'success',
-        message: {
-          sid: message.sid,
-          status: message.status,
-          from: message.from,
-          to: message.to
-        }
-      });
-    } catch (error: any) {
-      console.error('\n=== WhatsApp Test Error ===');
-      console.error('Error details:', {
-        message: error.message,
-        code: error.code,
-        status: error.status,
-        moreInfo: error.moreInfo
-      });
-      console.error('==========================\n');
-
-      res.status(500).json({
-        status: 'error',
-        error: {
-          message: error.message,
-          code: error.code || 'WHATSAPP_TEST_FAILED',
-          details: error.moreInfo
-        }
-      });
-    }
-  });
 
   // Add API key generation endpoint
   app.post("/api/keys/generate", async (req, res) => {
@@ -277,18 +193,18 @@ export function registerRoutes(app: Express): Server {
         to: toNumber,
         from: process.env.TWILIO_PHONE_NUMBER,
         twiml: `<?xml version="1.0" encoding="UTF-8"?>
-        <Response>
-            <Say voice="Polly.Mia-Neural" language="es-MX">
-                Hola, gracias por atender nuestra llamada. Le estamos contactando de Rottie Connect.
-                Un representante se unirá a la llamada en breve.
-            </Say>
-            <Dial callerId="${process.env.TWILIO_PHONE_NUMBER}">
-                <Number>+525584277211</Number>
-            </Dial>
-            <Say voice="Polly.Mia-Neural" language="es-MX">
-                La llamada ha finalizado. Gracias por usar Rottie Connect.
-            </Say>
-        </Response>`,
+<Response>
+    <Say voice="Polly.Mia-Neural" language="es-MX">
+        Hola, gracias por atender nuestra llamada. Le estamos contactando de Rottie Connect.
+        Un representante se unirá a la llamada en breve.
+    </Say>
+    <Dial callerId="${process.env.TWILIO_PHONE_NUMBER}">
+        <Number>+525584277211</Number>
+    </Dial>
+    <Say voice="Polly.Mia-Neural" language="es-MX">
+        La llamada ha finalizado. Gracias por usar Rottie Connect.
+    </Say>
+</Response>`,
         statusCallback: `${process.env.BASE_URL}/webhook`,
         statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
         record: true,
@@ -333,154 +249,6 @@ export function registerRoutes(app: Express): Server {
       });
     }
   });
-
-  // Authentication endpoints
-  app.post("/api/auth/register", async (req, res) => {
-    try {
-      const { username, password, phoneNumber } = registerSchema.parse(req.body);
-
-      const user = await AuthService.register(username, password, phoneNumber);
-      res.json({
-        success: true,
-        data: {
-          userId: user.id,
-          requiresVerification: true
-        }
-      });
-    } catch (error: any) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: error.errors[0].message
-          }
-        });
-      }
-
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'REGISTRATION_FAILED',
-          message: error.message
-        }
-      });
-    }
-  });
-
-  app.post("/api/auth/login", async (req, res) => {
-    try {
-      const { username, password } = loginSchema.parse(req.body);
-
-      const result = await AuthService.login(username, password);
-      res.json({
-        success: true,
-        data: result
-      });
-    } catch (error: any) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: error.errors[0].message
-          }
-        });
-      }
-
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'LOGIN_FAILED',
-          message: error.message
-        }
-      });
-    }
-  });
-
-  app.post("/api/auth/verify", async (req, res) => {
-    try {
-      const { userId, code } = verifySchema.parse(req.body);
-
-      const result = await AuthService.verifyPhone(userId, code);
-      res.json({
-        success: true,
-        data: result
-      });
-    } catch (error: any) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: error.errors[0].message
-          }
-        });
-      }
-
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'VERIFICATION_FAILED',
-          message: error.message
-        }
-      });
-    }
-  });
-
-  app.post("/api/auth/resend-code", async (req, res) => {
-    try {
-      const { userId } = z.object({ userId: z.number() }).parse(req.body);
-
-      await AuthService.requestNewCode(userId);
-      res.json({
-        success: true,
-        message: "Verification code sent"
-      });
-    } catch (error: any) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'CODE_RESEND_FAILED',
-          message: error.message
-        }
-      });
-    }
-  });
-
-  // Middleware to protect routes
-  const authenticateToken = async (req: any, res: any, next: any) => {
-    const token = req.headers.authorization?.split(' ')[1];
-
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: 'UNAUTHORIZED',
-          message: 'No token provided'
-        }
-      });
-    }
-
-    const payload = await AuthService.verifyToken(token);
-    if (!payload) {
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: 'UNAUTHORIZED',
-          message: 'Invalid token'
-        }
-      });
-    }
-
-    req.user = payload;
-    next();
-  };
-
-  // Protected routes
-  app.use('/api/messages', authenticateToken);
-  app.use('/api/conversations', authenticateToken);
-
 
   const wss = new WebSocketServer({
     server: httpServer,
@@ -644,16 +412,16 @@ export function registerRoutes(app: Express): Server {
         }
         // Return TwiML response for calls
         return res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
-        <Response>
-            <Say voice="alice" language="es-MX">
-                Gracias por contestar. Esta es una llamada de prueba de Rottie Connect.
-            </Say>
-            <Play digits="1234"></Play>
-            <Pause length="1"/>
-            <Say voice="alice" language="es-MX">
-                Fin de la llamada de prueba. Gracias.
-            </Say>
-        </Response>`);
+<Response>
+    <Say voice="alice" language="es-MX">
+        Gracias por contestar. Esta es una llamada de prueba de Rottie Connect.
+    </Say>
+    <Play digits="1234"></Play>
+    <Pause length="1"/>
+    <Say voice="alice" language="es-MX">
+        Fin de la llamada de prueba. Gracias.
+    </Say>
+</Response>`);
       }
 
       // Handle message status updates efficiently
@@ -765,10 +533,10 @@ export function registerRoutes(app: Express): Server {
       const toNumber = formatWhatsAppNumber(contactNumber);
 
       console.log('\n=== Sending WhatsApp Message ===');
-      console.log('Original number:', contactNumber);
-      console.log('Formatted number:', toNumber);
+      console.log('To:', toNumber);
       console.log('Content:', content);
       console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
+      console.log('API Key:', req.headers['x-api-key'] ? 'Present' : 'Not Present');
 
       // Send message via Twilio Messaging Service
       const messagingOptions = {
@@ -777,16 +545,13 @@ export function registerRoutes(app: Express): Server {
         body: content
       };
 
-      console.log('Message options:', messagingOptions);
       const twilioMessage = await twilioClient.messages.create(messagingOptions);
 
       console.log('Message sent successfully:', twilioMessage.sid);
       console.log('Message status:', twilioMessage.status);
-      console.log('From:', twilioMessage.from);
-      console.log('To:', twilioMessage.to);
       console.log('==========================\n');
 
-      // Store message in database with correct format
+      // Store message in database
       const message = await db
         .insert(messages)
         .values({
@@ -798,7 +563,7 @@ export function registerRoutes(app: Express): Server {
           metadata: {
             channel: 'whatsapp',
             profile: {
-              name: twilioMessage.to?.replace('whatsapp:', '')
+              name: twilioMessage.to
             }
           },
         })
@@ -807,10 +572,7 @@ export function registerRoutes(app: Express): Server {
       // Broadcast the new message to all connected clients
       broadcast({
         type: "message_created",
-        message: {
-          ...message[0],
-          createdAt: new Date().toISOString()
-        }
+        message: message[0]
       });
 
       // Return standardized API response
@@ -991,7 +753,8 @@ export function registerRoutes(app: Express): Server {
 
   // Get Messaging Service details
   app.get("/api/twilio/status", async (_req, res) => {
-    try {      if (!twilioClient) {
+    try {
+      if (!twilioClient) {
         throw new Error('Twilio client not initialized');
       }
 
@@ -1013,21 +776,11 @@ export function registerRoutes(app: Express): Server {
 
       res.json({
         status: "connected",
-        friendlyName: service.friendlyName || 'MessagingService',
+        friendlyName: service.friendlyName || 'Messaging Service',
         whatsappNumber: primaryNumber?.phoneNumber || undefined,
         inboundRequestUrl: service.inboundRequestUrl,
         useInboundWebhookOnNumber: service.useInboundWebhookOnNumber,
-        inboundMethod: service.inboundMethod,
-        fallbackUrl: service.fallbackUrl,
-        fallbackMethod: service.fallbackMethod,
-        smartEncoding: service.smartEncoding,
-        scanMessageContent: service.scanMessageContent,
-        fallbackToLongCode: service.fallbackToLongCode,
-        areaCodeGeomatch: service.areaCodeGeomatch,
-        synchronousValidation: service.synchronousValidation,
-        validityPeriod: service.validityPeriod,
-        useCase: service.useCase,
-        hasOptedOutSupport: service.hasOptedOutSupport,
+        channels: ['sms', 'whatsapp', 'voice']
       });
     } catch (error: any) {
       console.error("Messaging Service connection error:", error);
