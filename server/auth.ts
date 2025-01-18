@@ -36,14 +36,14 @@ function formatWhatsAppNumber(phone: string): string {
     return phone;
   }
 
-  // If format is +5411... (Argentina), keep as is
-  if (cleaned.startsWith('+54') && cleaned.length >= 12) {
-    return `whatsapp:${cleaned}`;
+  // Handle Mexican numbers with country code (standard format)
+  if (cleaned.startsWith('52') && cleaned.length === 12) {
+    return `whatsapp:+${cleaned}`;
   }
 
-  // If no country code but has 10 digits, assume Argentina
+  // Add Mexico country code for 10-digit numbers
   if (cleaned.length === 10) {
-    return `whatsapp:+54${cleaned}`;
+    return `whatsapp:+52${cleaned}`;
   }
 
   // If already has plus, just add whatsapp: prefix
@@ -170,7 +170,7 @@ export class AuthService {
           .update(users)
           .set({
             password: hashedPassword,
-            phoneNumber: '+5411125559311',
+            phoneNumber: '+5215584277211',
             isVerified: false
           })
           .where(eq(users.id, existingUser.id));
@@ -181,7 +181,7 @@ export class AuthService {
           .values({
             username: 'ROTTIE',
             password: hashedPassword,
-            phoneNumber: '+5411125559311',
+            phoneNumber: '+5215584277211',
             isVerified: false
           });
       }

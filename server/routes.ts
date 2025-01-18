@@ -26,7 +26,7 @@ try {
   console.error('Failed to initialize Twilio client:', error);
 }
 
-// Update formatWhatsAppNumber function to handle Argentina numbers correctly
+// Update formatWhatsAppNumber function
 function formatWhatsAppNumber(phone: string): string {
   // Remove all non-digit characters except plus sign
   const cleaned = phone.replace(/[^\d+]/g, '');
@@ -36,14 +36,14 @@ function formatWhatsAppNumber(phone: string): string {
     return phone;
   }
 
-  // If format is +5411... (Argentina), keep as is
-  if (cleaned.startsWith('+54') && cleaned.length >= 12) {
-    return `whatsapp:${cleaned}`;
+  // Handle Mexican numbers with country code (standard format)
+  if (cleaned.startsWith('52') && cleaned.length === 12) {
+    return `whatsapp:+${cleaned}`;
   }
 
-  // If no country code but has 10 digits, assume Argentina
+  // Add Mexico country code for 10-digit numbers
   if (cleaned.length === 10) {
-    return `whatsapp:+54${cleaned}`;
+    return `whatsapp:+52${cleaned}`;
   }
 
   // If already has plus, just add whatsapp: prefix
@@ -151,14 +151,15 @@ export function registerRoutes(app: Express): Server {
       }
 
       console.log('\n=== Testing WhatsApp Message ===');
-      const testNumber = '+5411125559311';
-      console.log('To:', testNumber);
+      const testNumber = '+5215584277211'; // Mexican test number
+      const formattedNumber = formatWhatsAppNumber(testNumber);
+      console.log('To:', formattedNumber);
 
       // Send test message via Twilio Messaging Service
       const message = await twilioClient.messages.create({
-        body: "11",
+        body: "Test message from RottieConnect",
         messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
-        to: formatWhatsAppNumber(testNumber)
+        to: formattedNumber
       });
 
       console.log('Message sent successfully:', message.sid);
@@ -999,7 +1000,17 @@ export function registerRoutes(app: Express): Server {
         whatsappNumber: primaryNumber?.phoneNumber || undefined,
         inboundRequestUrl: service.inboundRequestUrl,
         useInboundWebhookOnNumber: service.useInboundWebhookOnNumber,
-        channels: ['sms', 'whatsapp', 'voice']
+        inboundMethod: service.inboundMethod,
+        fallbackUrl: service.fallbackUrl,
+        fallbackMethod: service.fallbackMethod,
+        smartEncoding: service.smartEncoding,
+        scanMessageContent: service.scanMessageContent,
+        fallbackToLongCode: service.fallbackToLongCode,
+        areaCodeGeomatch: service.areaCodeGeomatch,
+        synchronousValidation: service.synchronousValidation,
+        validityPeriod: service.validityPeriod,
+        useCase: service.useCase,
+        hasOptedOutSupport: service.hasOptedOutSupport,
       });
     } catch (error: any) {
       console.error("Messaging Service connection error:", error);
