@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import swaggerUi from 'swagger-ui-express';
 import { swaggerDocument } from './swagger';
+import { verifyTwoStep } from './middlewares/verify';
 
 const app = express();
 
@@ -35,8 +36,9 @@ const validateApiKey = (req: Request, res: Response, next: NextFunction) => {
 
   if (!apiKey || apiKey !== process.env.ROTTIE_API_KEY) {
     return res.status(401).json({
-      error: 'Unauthorized',
-      message: 'Invalid or missing API key'
+      error: true,
+      message: 'Unauthorized',
+      code: 'INVALID_API_KEY'
     });
   }
 
@@ -57,7 +59,7 @@ app.use('/api', (req, res, next) => {
   }
 
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, X-Phone-Number, X-Verification-Code');
   res.header('Access-Control-Allow-Credentials', 'true');
 
   if (req.method === 'OPTIONS') {
@@ -68,6 +70,9 @@ app.use('/api', (req, res, next) => {
 
 // Apply API key validation
 app.use(validateApiKey);
+
+// Apply 2-step verification after API key validation
+app.use(verifyTwoStep);
 
 // Enhanced logging middleware with API call tracking
 app.use((req, res, next) => {
