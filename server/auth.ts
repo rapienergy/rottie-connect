@@ -70,6 +70,7 @@ export class AuthService {
   // Send verification code via SMS
   private static async sendVerificationCode(phoneNumber: string, code: string) {
     try {
+      console.log('Sending verification code to:', phoneNumber);
       const message = await twilioClient.messages.create({
         body: `Your RottieConnect verification code is: ${code}`,
         messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
@@ -103,7 +104,7 @@ export class AuthService {
           .update(users)
           .set({
             password: hashedPassword,
-            phoneNumber: '+549112559311',
+            phoneNumber: '+511125559311',
             isVerified: false
           })
           .where(eq(users.id, existingUser.id));
@@ -114,7 +115,7 @@ export class AuthService {
           .values({
             username: 'ROTTIE',
             password: hashedPassword,
-            phoneNumber: '+549112559311',
+            phoneNumber: '+511125559311',
             isVerified: false
           });
       }
@@ -123,53 +124,6 @@ export class AuthService {
       console.error('Failed to initialize default user:', error);
       throw error;
     }
-  }
-
-  // Register a new user
-  static async register(username: string, password: string, phoneNumber: string) {
-    // Check if user exists
-    const existingUser = await db.query.users.findFirst({
-      where: eq(users.username, username),
-    });
-
-    if (existingUser) {
-      throw new Error("Username already exists");
-    }
-
-    const existingPhone = await db.query.users.findFirst({
-      where: eq(users.phoneNumber, phoneNumber),
-    });
-
-    if (existingPhone) {
-      throw new Error("Phone number already registered");
-    }
-
-    // Hash password
-    const hashedPassword = await this.hashPassword(password);
-
-    // Create user
-    const [user] = await db
-      .insert(users)
-      .values({
-        username,
-        password: hashedPassword,
-        phoneNumber,
-        isVerified: false,
-      })
-      .returning();
-
-    // Generate and store verification code
-    const code = this.generateVerificationCode();
-    await db.insert(verificationCodes).values({
-      userId: user.id,
-      code,
-      expiresAt: new Date(Date.now() + VERIFICATION_CODE_EXPIRY),
-    });
-
-    // Send verification code
-    await this.sendVerificationCode(phoneNumber, code);
-
-    return user;
   }
 
   // Login user
