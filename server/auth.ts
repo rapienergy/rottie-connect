@@ -27,13 +27,21 @@ export class AuthService {
 
   // Hash password using Argon2
   private static async hashPassword(password: string): Promise<string> {
-    return argon2.hash(password);
+    try {
+      return await argon2.hash(password);
+    } catch (error) {
+      console.error('Error hashing password:', error);
+      throw error;
+    }
   }
 
   // Verify password using Argon2
   private static async verifyPassword(hash: string, password: string): Promise<boolean> {
     try {
-      return await argon2.verify(hash, password);
+      console.log('Verifying password...');
+      const result = await argon2.verify(hash, password);
+      console.log('Password verification result:', result);
+      return result;
     } catch (error) {
       console.error('Password verification error:', error);
       return false;
@@ -79,22 +87,41 @@ export class AuthService {
   // Initialize the system with the default user
   static async initializeDefaultUser() {
     try {
+      console.log('Initializing default user...');
       const hashedPassword = await this.hashPassword('R11r11r');
-      await db
-        .insert(users)
-        .values({
-          username: 'ROTTIE',
-          password: hashedPassword,
-          phoneNumber: '+549112559311',
-          isVerified: false
-        })
-        .onConflictDoUpdate({
-          target: users.username,
-          set: { password: hashedPassword }
-        });
+      console.log('Password hashed successfully');
+
+      const [existingUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, 'ROTTIE'))
+        .limit(1);
+
+      if (existingUser) {
+        console.log('Updating existing user...');
+        await db
+          .update(users)
+          .set({
+            password: hashedPassword,
+            phoneNumber: '+549112559311',
+            isVerified: false
+          })
+          .where(eq(users.id, existingUser.id));
+      } else {
+        console.log('Creating new user...');
+        await db
+          .insert(users)
+          .values({
+            username: 'ROTTIE',
+            password: hashedPassword,
+            phoneNumber: '+549112559311',
+            isVerified: false
+          });
+      }
       console.log('Default user initialized/updated successfully');
     } catch (error) {
       console.error('Failed to initialize default user:', error);
+      throw error;
     }
   }
 
@@ -149,15 +176,18 @@ export class AuthService {
   static async login(username: string, password: string) {
     console.log('Attempting login for username:', username);
 
-    const user = await db.query.users.findFirst({
-      where: eq(users.username, username),
-    });
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.username, username))
+      .limit(1);
 
     if (!user) {
       console.log('User not found');
       throw new Error("Invalid credentials");
     }
 
+    console.log('User found, verifying password...');
     const isValid = await this.verifyPassword(user.password, password);
     console.log('Password validation result:', isValid);
 
@@ -173,6 +203,8 @@ export class AuthService {
 
     // For unverified users, generate new verification code
     const code = this.generateVerificationCode();
+    console.log('Generated verification code:', code);
+
     await db.insert(verificationCodes).values({
       userId: user.id,
       code,
@@ -238,4 +270,4 @@ export class AuthService {
 }
 
 // Initialize the default user when the module loads
-AuthService.initializeDefaultUser();
+AuthService.initializeDefaultUser().catch(console.error);
