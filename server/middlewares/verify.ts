@@ -7,29 +7,17 @@ import { validatePhoneNumber } from "../lib/validation";
 const VERIFY_EXEMPT_PATHS = [
   '/api/verify/send',
   '/api/verify/check',
-  '/api/test-verification',
-  '/webhook',
-  '/api-docs',
-  '/api/twilio/status',  // Allow status checks without verification
-  '/api/twilio/test'     // Allow testing without verification
+  '/api/test-verification'
 ];
 
 export async function verifyTwoStep(req: Request, res: Response, next: NextFunction) {
   try {
-    // Skip verification for exempt paths
-    if (VERIFY_EXEMPT_PATHS.some(path => req.path.startsWith(path))) {
+    // Skip verification for exempt paths and development mode
+    if (VERIFY_EXEMPT_PATHS.some(path => req.path.startsWith(path)) || 
+        process.env.NODE_ENV === 'development') {
       return next();
     }
 
-    // Only skip verification in development mode for testing endpoints
-    if (process.env.NODE_ENV === 'development' && (
-      req.path.startsWith('/api/test') || 
-      req.path === '/webhook'
-    )) {
-      return next();
-    }
-
-    // For all other endpoints in production mode, require verification
     const phoneNumber = req.headers['x-phone-number'] as string;
     const verificationCode = req.headers['x-verification-code'] as string;
 
@@ -37,13 +25,7 @@ export async function verifyTwoStep(req: Request, res: Response, next: NextFunct
       return res.status(401).json({
         error: true,
         code: 'VERIFICATION_REQUIRED',
-        message: 'Two-step verification required. Please include x-phone-number and x-verification-code headers.',
-        details: {
-          missingHeaders: {
-            phoneNumber: !phoneNumber,
-            verificationCode: !verificationCode
-          }
-        }
+        message: 'Two-step verification required. Please include x-phone-number and x-verification-code headers.'
       });
     }
 
@@ -53,10 +35,7 @@ export async function verifyTwoStep(req: Request, res: Response, next: NextFunct
       return res.status(400).json({
         error: true,
         code: 'INVALID_PHONE_FORMAT',
-        message: phoneValidation.error,
-        details: {
-          providedNumber: phoneNumber
-        }
+        message: phoneValidation.error
       });
     }
 
@@ -81,14 +60,10 @@ export async function verifyTwoStep(req: Request, res: Response, next: NextFunct
       return res.status(401).json({
         error: true,
         code: 'INVALID_VERIFICATION',
-        message: 'Invalid or expired verification code. Please request a new verification code.',
-        details: {
-          reason: 'Code not found or expired'
-        }
+        message: 'Invalid or expired verification code.'
       });
     }
 
-    // Store verified phone number in request for later use
     req.headers['verified-phone'] = cleanNumber;
     next();
   } catch (error: any) {
@@ -96,8 +71,7 @@ export async function verifyTwoStep(req: Request, res: Response, next: NextFunct
     res.status(500).json({
       error: true,
       code: 'VERIFICATION_ERROR',
-      message: 'Error during verification process',
-      details: error.message
+      message: 'Error during verification process'
     });
   }
 }
