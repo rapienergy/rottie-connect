@@ -36,20 +36,12 @@ function formatWhatsAppNumber(phone: string): string {
     return phone;
   }
 
-  // Format Mexican WhatsApp business number (remove spaces)
-  if (process.env.TWILIO_PHONE_NUMBER) {
-    const fromNumber = process.env.TWILIO_PHONE_NUMBER.replace(/\s+/g, '');
-    if (phone === fromNumber) {
-      return `whatsapp:${fromNumber}`;
-    }
-  }
-
-  // Handle numbers with country code
+  // If already has plus sign, just add whatsapp: prefix
   if (cleaned.startsWith('+')) {
     return `whatsapp:${cleaned}`;
   }
 
-  // Add + if not present
+  // Add whatsapp: and + prefix
   return `whatsapp:+${cleaned}`;
 }
 
@@ -115,14 +107,15 @@ export class AuthService {
         return true;
       }
 
-      const whatsappNumber = formatWhatsAppNumber(phoneNumber);
-      console.log('Formatted WhatsApp number:', whatsappNumber);
-
       if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
         throw new Error('Messaging Service SID not configured');
       }
 
-      // Send message via Twilio Messaging Service with error handling
+      // Format the number for WhatsApp
+      const whatsappNumber = formatWhatsAppNumber(phoneNumber);
+      console.log('Formatted WhatsApp number:', whatsappNumber);
+
+      // Send message via Twilio Messaging Service
       const message = await twilioClient.messages.create({
         body: `Your RottieConnect verification code is: ${code}`,
         messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,

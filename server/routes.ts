@@ -147,6 +147,64 @@ const verifySchema = z.object({
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
 
+  // Test WhatsApp endpoint
+  app.get("/api/twilio/test-whatsapp", async (_req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
+        throw new Error('Messaging Service SID not configured');
+      }
+
+      console.log('\n=== Testing WhatsApp Message ===');
+      const testNumber = '+511125559311';
+      console.log('To:', testNumber);
+
+      // Send test message via Twilio Messaging Service
+      const message = await twilioClient.messages.create({
+        body: "11",
+        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+        to: `whatsapp:${testNumber}`
+      });
+
+      console.log('Message sent successfully:', message.sid);
+      console.log('Message status:', message.status);
+      console.log('From:', message.from);
+      console.log('To:', message.to);
+      console.log('==========================\n');
+
+      res.json({
+        status: 'success',
+        message: {
+          sid: message.sid,
+          status: message.status,
+          from: message.from,
+          to: message.to
+        }
+      });
+    } catch (error: any) {
+      console.error('\n=== WhatsApp Test Error ===');
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        status: error.status,
+        moreInfo: error.moreInfo
+      });
+      console.error('==========================\n');
+
+      res.status(500).json({
+        status: 'error',
+        error: {
+          message: error.message,
+          code: error.code || 'WHATSAPP_TEST_FAILED',
+          details: error.moreInfo
+        }
+      });
+    }
+  });
+
   // Add API key generation endpoint
   app.post("/api/keys/generate", async (req, res) => {
     try {
@@ -937,7 +995,7 @@ export function registerRoutes(app: Express): Server {
       const service = await twilioClient.messaging.v1.services(messagingServiceSid).fetch();
 
       // Get phone numbers associated with the Messaging Service
-      const phoneNumbers = await twilioClient.messaging.v1
+      const phoneNumbers = awaittwilioClient.messaging.v1
         .services(messagingServiceSid)
         .phoneNumbers
         .list();
