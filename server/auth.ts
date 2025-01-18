@@ -11,7 +11,7 @@ const JWT_SECRET = new TextEncoder().encode(process.env.REPL_ID || "rottie-conne
 const VERIFICATION_CODE_LENGTH = 6;
 const VERIFICATION_CODE_EXPIRY = 10 * 60 * 1000; // 10 minutes
 
-// Initialize Twilio client
+// Initialize Twilio client with error handling
 let twilioClient: Twilio | null = null;
 try {
   if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) {
@@ -36,8 +36,21 @@ function formatWhatsAppNumber(phone: string): string {
     return phone;
   }
 
-  // Add whatsapp: prefix and ensure proper format
-  return `whatsapp:${cleaned.startsWith('+') ? cleaned : '+' + cleaned}`;
+  // Format Mexican WhatsApp business number (remove spaces)
+  if (process.env.TWILIO_PHONE_NUMBER) {
+    const fromNumber = process.env.TWILIO_PHONE_NUMBER.replace(/\s+/g, '');
+    if (phone === fromNumber) {
+      return `whatsapp:${fromNumber}`;
+    }
+  }
+
+  // Handle numbers with country code
+  if (cleaned.startsWith('+')) {
+    return `whatsapp:${cleaned}`;
+  }
+
+  // Add + if not present
+  return `whatsapp:+${cleaned}`;
 }
 
 export class AuthService {
@@ -105,6 +118,11 @@ export class AuthService {
       const whatsappNumber = formatWhatsAppNumber(phoneNumber);
       console.log('Formatted WhatsApp number:', whatsappNumber);
 
+      if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
+        throw new Error('Messaging Service SID not configured');
+      }
+
+      // Send message via Twilio Messaging Service with error handling
       const message = await twilioClient.messages.create({
         body: `Your RottieConnect verification code is: ${code}`,
         messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
@@ -112,10 +130,20 @@ export class AuthService {
       });
 
       console.log('Verification WhatsApp sent:', message.sid);
+      console.log('Message status:', message.status);
+      console.log('From:', message.from);
+      console.log('To:', message.to);
       console.log('==========================\n');
       return true;
-    } catch (error) {
-      console.error('Failed to send verification WhatsApp:', error);
+    } catch (error: any) {
+      console.error('\n=== WhatsApp Verification Error ===');
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        status: error.status,
+        moreInfo: error.moreInfo
+      });
+      console.error('==========================\n');
       return false;
     }
   }
