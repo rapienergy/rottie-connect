@@ -19,6 +19,9 @@ const twilioClient = twilio(
 export class AuthService {
   // Generate a random verification code
   private static generateVerificationCode(): string {
+    if (process.env.NODE_ENV === 'development') {
+      return '123456'; // Fixed code for testing
+    }
     return randomBytes(3)
       .toString("hex")
       .toUpperCase()
@@ -70,7 +73,18 @@ export class AuthService {
   // Send verification code via SMS
   private static async sendVerificationCode(phoneNumber: string, code: string) {
     try {
-      console.log('Sending verification code to:', phoneNumber);
+      console.log('========================================');
+      console.log('Verification code details:');
+      console.log('Phone:', phoneNumber);
+      console.log('Code:', code);
+      console.log('========================================');
+
+      // Skip actual SMS sending in development
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Development mode: SMS sending skipped');
+        return true;
+      }
+
       const message = await twilioClient.messages.create({
         body: `Your RottieConnect verification code is: ${code}`,
         messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
@@ -171,6 +185,9 @@ export class AuthService {
 
   // Verify user's phone number
   static async verifyPhone(userId: number, code: string) {
+    console.log('Verifying phone for user:', userId);
+    console.log('Provided code:', code);
+
     const verificationCode = await db.query.verificationCodes.findFirst({
       where: and(
         eq(verificationCodes.userId, userId),
@@ -181,8 +198,11 @@ export class AuthService {
     });
 
     if (!verificationCode) {
+      console.log('Verification failed: Invalid or expired code');
       throw new Error("Invalid or expired verification code");
     }
+
+    console.log('Valid verification code found');
 
     // Mark code as used
     await db
@@ -197,6 +217,7 @@ export class AuthService {
       .where(eq(users.id, userId))
       .returning();
 
+    console.log('User verified successfully');
     const token = await this.generateToken(user);
     return { user, token };
   }
