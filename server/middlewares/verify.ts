@@ -16,12 +16,12 @@ const VERIFY_EXEMPT_PATHS = [
 
 export async function verifyTwoStep(req: Request, res: Response, next: NextFunction) {
   try {
-    // Skip verification for exempt paths and development mode
+    // Skip verification for exempt paths
     if (VERIFY_EXEMPT_PATHS.some(path => req.path.startsWith(path))) {
       return next();
     }
 
-    // Skip verification in development mode only for testing endpoints
+    // Only skip verification in development mode for testing endpoints
     if (process.env.NODE_ENV === 'development' && (
       req.path.startsWith('/api/test') || 
       req.path === '/webhook'
@@ -29,6 +29,7 @@ export async function verifyTwoStep(req: Request, res: Response, next: NextFunct
       return next();
     }
 
+    // For all other endpoints in production mode, require verification
     const phoneNumber = req.headers['x-phone-number'] as string;
     const verificationCode = req.headers['x-verification-code'] as string;
 
