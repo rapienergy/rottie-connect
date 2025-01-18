@@ -7,15 +7,8 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Form schemas
-const registerSchema = z.object({
-  username: z.string().min(3, "Username must be at least 3 characters"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-  phoneNumber: z.string().regex(/^\+[1-9]\d{1,14}$/, "Invalid phone number format")
-});
-
 const loginSchema = z.object({
   username: z.string(),
   password: z.string()
@@ -25,7 +18,6 @@ const verifySchema = z.object({
   code: z.string().length(6, "Verification code must be 6 characters")
 });
 
-type RegisterForm = z.infer<typeof registerSchema>;
 type LoginForm = z.infer<typeof loginSchema>;
 type VerifyForm = z.infer<typeof verifySchema>;
 
@@ -35,19 +27,10 @@ export default function AuthPage() {
   const [showVerification, setShowVerification] = useState(false);
   const { toast } = useToast();
 
-  const registerForm = useForm<RegisterForm>({
-    resolver: zodResolver(registerSchema),
-    defaultValues: {
-      username: "",
-      password: "",
-      phoneNumber: "+5491125559311" // Default phone number
-    }
-  });
-
   const loginForm = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      username: "",
+      username: "ROTTIE",
       password: ""
     }
   });
@@ -58,38 +41,6 @@ export default function AuthPage() {
       code: ""
     }
   });
-
-  const handleRegister = async (data: RegisterForm) => {
-    try {
-      setIsLoading(true);
-      const response = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
-      });
-
-      const result = await response.json();
-
-      if (!result.success) {
-        throw new Error(result.error.message);
-      }
-
-      setUserId(result.data.userId);
-      setShowVerification(true);
-      toast({
-        title: "Registration successful",
-        description: "Please verify your phone number with the code sent via SMS",
-      });
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Registration failed",
-        description: error.message,
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleLogin = async (data: LoginForm) => {
     try {
@@ -111,7 +62,7 @@ export default function AuthPage() {
         setShowVerification(true);
         toast({
           title: "Verification required",
-          description: "Please verify your phone number with the code sent via SMS",
+          description: "Please enter the code sent to +549112559311",
         });
         return;
       }
@@ -198,7 +149,7 @@ export default function AuthPage() {
           <CardHeader>
             <CardTitle>Verify Your Phone</CardTitle>
             <CardDescription>
-              Enter the verification code sent to your phone
+              Enter the verification code sent to +549112559311
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -239,99 +190,43 @@ export default function AuthPage() {
         <CardHeader>
           <CardTitle>Welcome to RottieConnect</CardTitle>
           <CardDescription>
-            Login or create an account to continue
+            Login to continue
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="login">
-            <TabsList className="w-full mb-4">
-              <TabsTrigger value="login" className="flex-1">Login</TabsTrigger>
-              <TabsTrigger value="register" className="flex-1">Register</TabsTrigger>
-            </TabsList>
-            <TabsContent value="login">
-              <Form {...loginForm}>
-                <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-4">
-                  <FormField
-                    control={loginForm.control}
-                    name="username"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Username</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={loginForm.control}
-                    name="password"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Password</FormLabel>
-                        <FormControl>
-                          <Input type="password" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? "Logging in..." : "Login"}
-                  </Button>
-                </form>
-              </Form>
-            </TabsContent>
-            <TabsContent value="register">
-              <Form {...registerForm}>
-                <form onSubmit={registerForm.handleSubmit(handleRegister)} className="space-y-4">
-                  <FormField
-                    control={registerForm.control}
-                    name="username"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Username</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={registerForm.control}
-                    name="password"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Password</FormLabel>
-                        <FormControl>
-                          <Input type="password" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={registerForm.control}
-                    name="phoneNumber"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Phone Number</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? "Registering..." : "Register"}
-                  </Button>
-                </form>
-              </Form>
-            </TabsContent>
-          </Tabs>
+          <Form {...loginForm}>
+            <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-4">
+              <FormField
+                control={loginForm.control}
+                name="username"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Username</FormLabel>
+                    <FormControl>
+                      <Input {...field} disabled />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={loginForm.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <Input type="password" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? "Logging in..." : "Login"}
+              </Button>
+            </form>
+          </Form>
         </CardContent>
       </Card>
     </div>
