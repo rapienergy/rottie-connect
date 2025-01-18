@@ -62,7 +62,7 @@ export default function AuthPage() {
         setShowVerification(true);
         toast({
           title: "Verification required",
-          description: "Please enter the code sent to +511125559311",
+          description: "Please enter the code sent to +5411125559311",
         });
         return;
       }
@@ -149,7 +149,7 @@ export default function AuthPage() {
           <CardHeader>
             <CardTitle>Verify Your Phone</CardTitle>
             <CardDescription>
-              Enter the verification code sent to +511125559311
+              Enter the verification code sent to +5411125559311
             </CardDescription>
           </CardHeader>
           <CardContent>

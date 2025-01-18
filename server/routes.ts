@@ -26,7 +26,7 @@ try {
   console.error('Failed to initialize Twilio client:', error);
 }
 
-// Update formatWhatsAppNumber function for better number formatting
+// Update formatWhatsAppNumber function to handle Argentina numbers correctly
 function formatWhatsAppNumber(phone: string): string {
   // Remove all non-digit characters except plus sign
   const cleaned = phone.replace(/[^\d+]/g, '');
@@ -36,31 +36,23 @@ function formatWhatsAppNumber(phone: string): string {
     return phone;
   }
 
-  // Format Mexican WhatsApp business number (remove spaces)
-  if (process.env.TWILIO_PHONE_NUMBER) {
-    const fromNumber = process.env.TWILIO_PHONE_NUMBER.replace(/\s+/g, '');
-    if (phone === fromNumber) {
-      return `whatsapp:${fromNumber}`;
-    }
+  // If format is +5411... (Argentina), keep as is
+  if (cleaned.startsWith('+54') && cleaned.length >= 12) {
+    return `whatsapp:${cleaned}`;
   }
 
-  // Handle Mexican numbers with country code
-  if (cleaned.startsWith('52') && cleaned.length === 12) {
-    return `whatsapp:+${cleaned}`;
-  }
-
-  // Add Mexico country code for 10-digit numbers
+  // If no country code but has 10 digits, assume Argentina
   if (cleaned.length === 10) {
-    return `whatsapp:+52${cleaned}`;
+    return `whatsapp:+54${cleaned}`;
   }
 
-  // If already has plus and proper length, just add whatsapp: prefix
+  // If already has plus, just add whatsapp: prefix
   if (cleaned.startsWith('+')) {
     return `whatsapp:${cleaned}`;
   }
 
-  // Default: add whatsapp:+52 if no country code
-  return `whatsapp:+52${cleaned}`;
+  // Default: add whatsapp: and + prefix
+  return `whatsapp:+${cleaned}`;
 }
 
 // Update formatVoiceNumber function for better number formatting
@@ -159,14 +151,14 @@ export function registerRoutes(app: Express): Server {
       }
 
       console.log('\n=== Testing WhatsApp Message ===');
-      const testNumber = '+511125559311';
+      const testNumber = '+5411125559311';
       console.log('To:', testNumber);
 
       // Send test message via Twilio Messaging Service
       const message = await twilioClient.messages.create({
         body: "11",
         messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
-        to: `whatsapp:${testNumber}`
+        to: formatWhatsAppNumber(testNumber)
       });
 
       console.log('Message sent successfully:', message.sid);
@@ -834,7 +826,6 @@ export function registerRoutes(app: Express): Server {
   });
 
 
-
   // Get all conversations across channels
   app.get("/api/conversations", async (_req, res) => {
     try {
@@ -995,7 +986,7 @@ export function registerRoutes(app: Express): Server {
       const service = await twilioClient.messaging.v1.services(messagingServiceSid).fetch();
 
       // Get phone numbers associated with the Messaging Service
-      const phoneNumbers = awaittwilioClient.messaging.v1
+      const phoneNumbers = await twilioClient.messaging.v1
         .services(messagingServiceSid)
         .phoneNumbers
         .list();
@@ -1004,7 +995,7 @@ export function registerRoutes(app: Express): Server {
 
       res.json({
         status: "connected",
-        friendlyName: service.friendlyName || 'Messaging Service',
+        friendlyName: service.friendlyName || 'MessagingService',
         whatsappNumber: primaryNumber?.phoneNumber || undefined,
         inboundRequestUrl: service.inboundRequestUrl,
         useInboundWebhookOnNumber: service.useInboundWebhookOnNumber,

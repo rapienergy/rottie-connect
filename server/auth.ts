@@ -36,12 +36,22 @@ function formatWhatsAppNumber(phone: string): string {
     return phone;
   }
 
-  // If already has plus sign, just add whatsapp: prefix
+  // If format is +5411... (Argentina), keep as is
+  if (cleaned.startsWith('+54') && cleaned.length >= 12) {
+    return `whatsapp:${cleaned}`;
+  }
+
+  // If no country code but has 10 digits, assume Argentina
+  if (cleaned.length === 10) {
+    return `whatsapp:+54${cleaned}`;
+  }
+
+  // If already has plus, just add whatsapp: prefix
   if (cleaned.startsWith('+')) {
     return `whatsapp:${cleaned}`;
   }
 
-  // Add whatsapp: and + prefix
+  // Default: add whatsapp: and + prefix
   return `whatsapp:+${cleaned}`;
 }
 
@@ -160,7 +170,7 @@ export class AuthService {
           .update(users)
           .set({
             password: hashedPassword,
-            phoneNumber: '+511125559311',
+            phoneNumber: '+5411125559311',
             isVerified: false
           })
           .where(eq(users.id, existingUser.id));
@@ -171,7 +181,7 @@ export class AuthService {
           .values({
             username: 'ROTTIE',
             password: hashedPassword,
-            phoneNumber: '+511125559311',
+            phoneNumber: '+5411125559311',
             isVerified: false
           });
       }
