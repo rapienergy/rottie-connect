@@ -886,33 +886,47 @@ export function registerRoutes(app: Express): Server {
       }
 
       // Generate and store verification code
-      const code = await VerificationService.createVerification(phoneNumber);
+      try {
+        const code = await VerificationService.createVerification(phoneNumber);
 
-      console.log('\n=== Sending Verification Code ===');
-      console.log('To:', phoneNumber);
-      console.log('Code:', code);
+        console.log('\n=== Sending Verification Code ===');
+        console.log('To:', phoneNumber);
+        console.log('Code:', code);
 
-      // Format number for WhatsApp
-      const toNumber = formatWhatsAppNumber(phoneNumber);
+        // Format number for WhatsApp
+        const toNumber = formatWhatsAppNumber(phoneNumber);
 
-      if (!twilioClient || !process.env.TWILIO_MESSAGING_SERVICE_SID) {
-        throw new Error('Twilio client or messaging service not configured');
+        if (!twilioClient || !process.env.TWILIO_MESSAGING_SERVICE_SID) {
+          throw new Error('Twilio client or messaging service not configured');
+        }
+
+        // Send code via WhatsApp
+        const message = await twilioClient.messages.create({
+          messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+          to: toNumber,
+          body: `Your RottieConnect verification code is: ${code}\n\nThis code will expire in 5 minutes.`
+        });
+
+        console.log('Message sent successfully:', message.sid);
+        console.log('==========================\n');
+
+        res.json({
+          success: true,
+          message: 'Verification code sent successfully'
+        });
+      } catch (error: any) {
+        // Handle specific verification service errors
+        if (error.message.includes('Please wait')) {
+          return res.status(429).json({
+            success: false,
+            error: {
+              code: 'COOLDOWN_ACTIVE',
+              message: error.message
+            }
+          });
+        }
+        throw error;
       }
-
-      // Send code via WhatsApp
-      const message = await twilioClient.messages.create({
-        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
-        to: toNumber,
-        body: `Your RottieConnect verification code is: ${code}\n\nThis code will expire in 5 minutes.`
-      });
-
-      console.log('Message sent successfully:', message.sid);
-      console.log('==========================\n');
-
-      res.json({
-        success: true,
-        message: 'Verification code sent successfully'
-      });
     } catch (error: any) {
       console.error("Error sending verification code:", error);
       res.status(500).json({
@@ -938,28 +952,59 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      const isValid = await VerificationService.verifyCode(phoneNumber, code);
-
-      if (!isValid) {
+      // Validate code format
+      if (!VerificationService.isValidCode(code)) {
         return res.status(400).json({
           success: false,
           error: {
-            code: 'INVALID_CODE',
-            message: 'Invalid or expired verification code'
+            code: 'INVALID_CODE_FORMAT',
+            message: 'Verification code must be 6 digits'
           }
         });
       }
 
-      res.json({
-        success: true,
-        message: 'Code verified successfully'
-      });
+      try {
+        await VerificationService.verifyCode(phoneNumber, code);
+
+        res.json({
+          success: true,
+          message: 'Code verified successfully'
+        });
+      } catch (error: any) {
+        // Handle specific verification errors with appropriate status codes
+        if (error.message.includes('Max attempts')) {
+          return res.status(429).json({
+            success: false,
+            error: {
+              code: 'MAX_ATTEMPTS_EXCEEDED',
+              message: error.message
+            }
+          });
+        } else if (error.message.includes('attempts remaining')) {
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'INVALID_CODE',
+              message: error.message
+            }
+          });
+        } else if (error.message.includes('No active verification')) {
+          return res.status(404).json({
+            success: false,
+            error: {
+              code: 'NO_ACTIVE_CODE',
+              message: error.message
+            }
+          });
+        }
+        throw error;
+      }
     } catch (error: any) {
       console.error("Error verifying code:", error);
       res.status(500).json({
         success: false,
         error: {
-          code: error.code || 'VERIFICATION_CHECK_FAILED',
+          code: error.code || 'VERIFICATION_ERROR',
           message: error.message || 'Failed to verify code'
         }
       });
@@ -1023,6 +1068,5 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Rest of the code remains unchanged
   return httpServer;
 }

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, json, index, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, json, index, boolean, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 
 export const messages = pgTable("messages", {
@@ -41,6 +41,10 @@ export const verificationCodes = pgTable("verification_codes", {
   code: text("code").notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   verified: boolean("verified").default(false),
+  attempts: integer("attempts").default(0).notNull(),
+  lastAttemptAt: timestamp("last_attempt_at"),
+  maxAttempts: integer("max_attempts").default(3).notNull(),
+  cooldownMinutes: integer("cooldown_minutes").default(15).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => ({
   phoneNumberIdx: index("phone_number_idx").on(table.phoneNumber),
@@ -48,3 +52,5 @@ export const verificationCodes = pgTable("verification_codes", {
 
 export const insertVerificationSchema = createInsertSchema(verificationCodes);
 export const selectVerificationSchema = createSelectSchema(verificationCodes);
+
+export type VerificationCode = typeof verificationCodes.$inferSelect;
