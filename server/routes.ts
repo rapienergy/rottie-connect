@@ -966,11 +966,11 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Test verification code sending
+  //  // Test verification code sending
   app.post("/api/test-verification", async (req, res) => {
     try {
-      if (!twilioClient) {
-        throw new Error('Twilio client not initialized');
+      if (!twilioClient || !process.env.TWILIO_MESSAGING_SERVICE_SID) {
+        throw new Error('Twilio client or messaging service not configured');
       }
 
       const testNumber = "+5215584277211";
@@ -983,10 +983,6 @@ export function registerRoutes(app: Express): Server {
       // Format number for WhatsApp
       const toNumber = formatWhatsAppNumber(testNumber);
       console.log('Formatted number:', toNumber);
-
-      if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
-        throw new Error('Messaging Service SID not configured');
-      }
 
       // Send test code via WhatsApp
       const message = await twilioClient.messages.create({
@@ -1008,7 +1004,15 @@ export function registerRoutes(app: Express): Server {
         }
       });
     } catch (error: any) {
-      console.error("Error sending test verification code:", error);
+      console.error("\n=== WhatsApp Verification Error ===");
+      console.error("Error details:", {
+        message: error.message,
+        code: error.code,
+        status: error.status,
+        moreInfo: error.moreInfo
+      });
+      console.error("==========================\n");
+
       res.status(500).json({
         success: false,
         error: {
@@ -1021,5 +1025,4 @@ export function registerRoutes(app: Express): Server {
 
   // Rest of the code remains unchanged
   return httpServer;
-
 }
