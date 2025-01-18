@@ -966,5 +966,60 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Test verification code sending
+  app.post("/api/test-verification", async (req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      const testNumber = "+5215584277211";
+      const testCode = "123456"; // Static code for testing
+
+      console.log('\n=== Testing Verification Code ===');
+      console.log('To:', testNumber);
+      console.log('Code:', testCode);
+
+      // Format number for WhatsApp
+      const toNumber = formatWhatsAppNumber(testNumber);
+      console.log('Formatted number:', toNumber);
+
+      if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
+        throw new Error('Messaging Service SID not configured');
+      }
+
+      // Send test code via WhatsApp
+      const message = await twilioClient.messages.create({
+        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+        to: toNumber,
+        body: `Your RottieConnect test verification code is: ${testCode}\n\nThis is a test message.`
+      });
+
+      console.log('Message sent successfully:', message.sid);
+      console.log('==========================\n');
+
+      res.json({
+        success: true,
+        message: 'Test verification code sent successfully',
+        details: {
+          to: toNumber,
+          messageId: message.sid,
+          status: message.status
+        }
+      });
+    } catch (error: any) {
+      console.error("Error sending test verification code:", error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: error.code || 'TEST_VERIFICATION_FAILED',
+          message: error.message || 'Failed to send test verification code'
+        }
+      });
+    }
+  });
+
+  // Rest of the code remains unchanged
   return httpServer;
+
 }
