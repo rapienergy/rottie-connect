@@ -26,33 +26,45 @@ try {
   console.error('Failed to initialize Twilio client:', error);
 }
 
-// Update formatWhatsAppNumber function
+// Update formatWhatsAppNumber function for better error handling
 function formatWhatsAppNumber(phone: string): string {
-  // Remove all non-digit characters except plus sign
-  const cleaned = phone.replace(/[^\d+]/g, '');
+  console.log('Formatting number:', phone);
 
-  // If number already starts with "whatsapp:", return as is
+  // If already has whatsapp: prefix, validate and return
   if (phone.startsWith('whatsapp:')) {
+    console.log('Number already has whatsapp: prefix');
     return phone;
   }
 
+  // Remove all non-digit characters except plus sign
+  const cleaned = phone.replace(/[^\d+]/g, '');
+  console.log('Cleaned number:', cleaned);
+
   // Handle Mexican numbers with country code (standard format)
   if (cleaned.startsWith('52') && cleaned.length === 12) {
-    return `whatsapp:+${cleaned}`;
+    const formatted = `whatsapp:+${cleaned}`;
+    console.log('Formatted Mexican number (with country code):', formatted);
+    return formatted;
   }
 
   // Add Mexico country code for 10-digit numbers
   if (cleaned.length === 10) {
-    return `whatsapp:+52${cleaned}`;
+    const formatted = `whatsapp:+52${cleaned}`;
+    console.log('Formatted Mexican number (added country code):', formatted);
+    return formatted;
   }
 
   // If already has plus, just add whatsapp: prefix
   if (cleaned.startsWith('+')) {
-    return `whatsapp:${cleaned}`;
+    const formatted = `whatsapp:${cleaned}`;
+    console.log('Formatted international number:', formatted);
+    return formatted;
   }
 
   // Default: add whatsapp: and + prefix
-  return `whatsapp:+${cleaned}`;
+  const formatted = `whatsapp:+${cleaned}`;
+  console.log('Formatted number (default):', formatted);
+  return formatted;
 }
 
 // Update formatVoiceNumber function for better number formatting
@@ -265,18 +277,18 @@ export function registerRoutes(app: Express): Server {
         to: toNumber,
         from: process.env.TWILIO_PHONE_NUMBER,
         twiml: `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say voice="Polly.Mia-Neural" language="es-MX">
-        Hola, gracias por atender nuestra llamada. Le estamos contactando de Rottie Connect.
-        Un representante se unirá a la llamada en breve.
-    </Say>
-    <Dial callerId="${process.env.TWILIO_PHONE_NUMBER}">
-        <Number>+525584277211</Number>
-    </Dial>
-    <Say voice="Polly.Mia-Neural" language="es-MX">
-        La llamada ha finalizado. Gracias por usar Rottie Connect.
-    </Say>
-</Response>`,
+        <Response>
+            <Say voice="Polly.Mia-Neural" language="es-MX">
+                Hola, gracias por atender nuestra llamada. Le estamos contactando de Rottie Connect.
+                Un representante se unirá a la llamada en breve.
+            </Say>
+            <Dial callerId="${process.env.TWILIO_PHONE_NUMBER}">
+                <Number>+525584277211</Number>
+            </Dial>
+            <Say voice="Polly.Mia-Neural" language="es-MX">
+                La llamada ha finalizado. Gracias por usar Rottie Connect.
+            </Say>
+        </Response>`,
         statusCallback: `${process.env.BASE_URL}/webhook`,
         statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
         record: true,
@@ -632,16 +644,16 @@ export function registerRoutes(app: Express): Server {
         }
         // Return TwiML response for calls
         return res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say voice="alice" language="es-MX">
-        Gracias por contestar. Esta es una llamada de prueba de Rottie Connect.
-    </Say>
-    <Play digits="1234"></Play>
-    <Pause length="1"/>
-    <Say voice="alice" language="es-MX">
-        Fin de la llamada de prueba. Gracias.
-    </Say>
-</Response>`);
+        <Response>
+            <Say voice="alice" language="es-MX">
+                Gracias por contestar. Esta es una llamada de prueba de Rottie Connect.
+            </Say>
+            <Play digits="1234"></Play>
+            <Pause length="1"/>
+            <Say voice="alice" language="es-MX">
+                Fin de la llamada de prueba. Gracias.
+            </Say>
+        </Response>`);
       }
 
       // Handle message status updates efficiently
@@ -753,10 +765,10 @@ export function registerRoutes(app: Express): Server {
       const toNumber = formatWhatsAppNumber(contactNumber);
 
       console.log('\n=== Sending WhatsApp Message ===');
-      console.log('To:', toNumber);
+      console.log('Original number:', contactNumber);
+      console.log('Formatted number:', toNumber);
       console.log('Content:', content);
       console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
-      console.log('API Key:', req.headers['x-api-key'] ? 'Present' : 'Not Present');
 
       // Send message via Twilio Messaging Service
       const messagingOptions = {
@@ -765,13 +777,16 @@ export function registerRoutes(app: Express): Server {
         body: content
       };
 
+      console.log('Message options:', messagingOptions);
       const twilioMessage = await twilioClient.messages.create(messagingOptions);
 
       console.log('Message sent successfully:', twilioMessage.sid);
       console.log('Message status:', twilioMessage.status);
+      console.log('From:', twilioMessage.from);
+      console.log('To:', twilioMessage.to);
       console.log('==========================\n');
 
-      // Store message in database
+      // Store message in database with correct format
       const message = await db
         .insert(messages)
         .values({
@@ -783,7 +798,7 @@ export function registerRoutes(app: Express): Server {
           metadata: {
             channel: 'whatsapp',
             profile: {
-              name: twilioMessage.to
+              name: twilioMessage.to?.replace('whatsapp:', '')
             }
           },
         })
@@ -792,7 +807,10 @@ export function registerRoutes(app: Express): Server {
       // Broadcast the new message to all connected clients
       broadcast({
         type: "message_created",
-        message: message[0]
+        message: {
+          ...message[0],
+          createdAt: new Date().toISOString()
+        }
       });
 
       // Return standardized API response
@@ -973,8 +991,7 @@ export function registerRoutes(app: Express): Server {
 
   // Get Messaging Service details
   app.get("/api/twilio/status", async (_req, res) => {
-    try {
-      if (!twilioClient) {
+    try {      if (!twilioClient) {
         throw new Error('Twilio client not initialized');
       }
 
