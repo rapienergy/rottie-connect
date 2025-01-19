@@ -125,49 +125,63 @@ export function setupAuth(app: Express) {
 
   // Login endpoint with two-step verification
   app.post("/api/login", (req, res, next) => {
-    const result = insertUserSchema.safeParse(req.body);
-    if (!result.success) {
-      return res.status(400).send("Invalid input");
+    try {
+      const result = insertUserSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid input",
+          errors: result.error.errors
+        });
+      }
+
+      passport.authenticate("local", async (err: any, user: Express.User, info: IVerifyOptions) => {
+        if (err) {
+          return res.status(500).json({
+            success: false,
+            message: "Internal server error"
+          });
+        }
+        if (!user) {
+          return res.status(401).json({
+            success: false,
+            message: info.message || "Authentication failed"
+          });
+        }
+
+        try {
+          // Send verification code to WhatsApp
+          const verificationCode = await VerificationService.createVerification("+5215584277211");
+
+          // Store user data in session for verification step
+          req.session.pendingUser = {
+            id: user.id,
+            username: user.username
+          };
+
+          return res.json({
+            success: true,
+            message: "Verification code sent to WhatsApp",
+            requireVerification: true
+          });
+        } catch (error: any) {
+          console.error('Verification error:', error);
+          return res.status(500).json({
+            success: false,
+            message: error.message || "Error sending verification code"
+          });
+        }
+      })(req, res, next);
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: "Internal server error"
+      });
     }
-
-    passport.authenticate("local", async (err: any, user: Express.User, info: IVerifyOptions) => {
-      if (err) {
-        return next(err);
-      }
-      if (!user) {
-        return res.status(401).json({
-          success: false,
-          message: info.message || "Authentication failed"
-        });
-      }
-
-      try {
-        // Send verification code to WhatsApp
-        const verificationCode = await VerificationService.createVerification("+5215584277211");
-
-        // Store user data in session for verification step
-        req.session.pendingUser = {
-          id: user.id,
-          username: user.username
-        };
-
-        return res.json({
-          success: true,
-          message: "Verification code sent to WhatsApp",
-          requireVerification: true
-        });
-      } catch (error: any) {
-        console.error('Verification error:', error);
-        return res.status(500).json({
-          success: false,
-          message: error.message || "Error sending verification code"
-        });
-      }
-    })(req, res, next);
   });
 
   // Verify WhatsApp code endpoint
-  app.post("/api/verify", async (req, res, next) => {
+  app.post("/api/verify", async (req, res) => {
     const { code } = req.body;
     const pendingUser = req.session.pendingUser;
 
@@ -190,7 +204,10 @@ export function setupAuth(app: Express) {
 
         req.login(user, (err) => {
           if (err) {
-            return next(err);
+            return res.status(500).json({
+              success: false,
+              message: "Error completing login"
+            });
           }
           // Clear pending user
           delete req.session.pendingUser;
@@ -216,22 +233,6 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // Logout endpoint
-  app.post("/api/logout", (req, res) => {
-    req.logout((err) => {
-      if (err) {
-        return res.status(500).json({
-          success: false,
-          message: "Logout failed"
-        });
-      }
-      res.json({
-        success: true,
-        message: "Logged out successfully"
-      });
-    });
-  });
-
   // Get current user
   app.get("/api/user", (req, res) => {
     if (req.isAuthenticated()) {
@@ -240,7 +241,10 @@ export function setupAuth(app: Express) {
         username: req.user.username
       });
     }
-    res.status(401).send("Not authenticated");
+    res.status(401).json({
+      success: false,
+      message: "Not authenticated"
+    });
   });
 
   // Create initial ROTTIE user

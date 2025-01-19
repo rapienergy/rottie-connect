@@ -1,68 +1,85 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { User } from "@db/schema";
+import { useToast } from "@/components/ui/use-toast";
 
 type LoginCredentials = {
   username: string;
   password: string;
 };
 
-type RequestResult = {
-  ok: true;
-} | {
-  ok: false;
-  message: string;
+type VerificationCredentials = {
+  code: string;
 };
 
-async function handleRequest(
-  url: string,
-  method: string,
-  body?: LoginCredentials
-): Promise<RequestResult> {
-  try {
-    const response = await fetch(url, {
-      method,
-      headers: body ? { "Content-Type": "application/json" } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-      credentials: "include",
-    });
+type LoginResponse = {
+  success: boolean;
+  message: string;
+  requireVerification?: boolean;
+  user?: {
+    id: number;
+    username: string;
+  };
+};
 
-    if (!response.ok) {
-      if (response.status >= 500) {
-        return { ok: false, message: response.statusText };
-      }
-
-      const message = await response.text();
-      return { ok: false, message };
-    }
-
-    return { ok: true };
-  } catch (e: any) {
-    return { ok: false, message: e.toString() };
-  }
-}
-
-async function fetchUser(): Promise<User | null> {
-  const response = await fetch('/api/user', {
+async function handleLogin(credentials: LoginCredentials): Promise<LoginResponse> {
+  const response = await fetch('/api/login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(credentials),
     credentials: 'include'
   });
 
+  const data = await response.json();
   if (!response.ok) {
-    if (response.status === 401) {
-      return null;
-    }
-
-    if (response.status >= 500) {
-      throw new Error(`${response.status}: ${response.statusText}`);
-    }
-
-    throw new Error(`${response.status}: ${await response.text()}`);
+    throw new Error(data.message || 'Login failed');
   }
 
-  return response.json();
+  return data;
+}
+
+async function handleVerification(code: string): Promise<LoginResponse> {
+  const response = await fetch('/api/verify', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ code }),
+    credentials: 'include'
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || 'Verification failed');
+  }
+
+  return data;
+}
+
+async function fetchUser(): Promise<User | null> {
+  try {
+    const response = await fetch('/api/user', {
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        return null;
+      }
+      throw new Error(await response.text());
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Error fetching user:', error);
+    return null;
+  }
 }
 
 export function useUser() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: user, error, isLoading } = useQuery<User | null, Error>({
     queryKey: ['user'],
@@ -71,18 +88,34 @@ export function useUser() {
     retry: false
   });
 
-  const loginMutation = useMutation<RequestResult, Error, LoginCredentials>({
-    mutationFn: (credentials) => handleRequest('/api/login', 'POST', credentials),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user'] });
+  const loginMutation = useMutation({
+    mutationFn: handleLogin,
+    onSuccess: (data) => {
+      if (!data.requireVerification) {
+        queryClient.invalidateQueries({ queryKey: ['user'] });
+      }
     },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Login failed",
+        description: error.message
+      });
+    }
   });
 
-  const logoutMutation = useMutation<RequestResult, Error>({
-    mutationFn: () => handleRequest('/api/logout', 'POST'),
+  const verifyMutation = useMutation({
+    mutationFn: handleVerification,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user'] });
     },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Verification failed",
+        description: error.message
+      });
+    }
   });
 
   return {
@@ -90,6 +123,6 @@ export function useUser() {
     isLoading,
     error,
     login: loginMutation.mutateAsync,
-    logout: logoutMutation.mutateAsync,
+    verify: verifyMutation.mutateAsync,
   };
 }

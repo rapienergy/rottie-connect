@@ -6,7 +6,6 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { useToast } from "@/components/ui/use-toast";
 import { useUser } from "@/hooks/use-user";
 
 const loginSchema = z.object({
@@ -22,8 +21,7 @@ type LoginForm = z.infer<typeof loginSchema>;
 type VerificationForm = z.infer<typeof verificationSchema>;
 
 export default function AuthPage() {
-  const { login } = useUser();
-  const { toast } = useToast();
+  const { login, verify } = useUser();
   const [isLoading, setIsLoading] = useState(false);
   const [showVerification, setShowVerification] = useState(false);
 
@@ -45,39 +43,10 @@ export default function AuthPage() {
   async function onSubmitLogin(data: LoginForm) {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-        credentials: 'include',
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        toast({
-          variant: "destructive",
-          title: "Authentication failed",
-          description: result.message,
-        });
-        return;
-      }
-
+      const result = await login(data);
       if (result.requireVerification) {
         setShowVerification(true);
-        toast({
-          title: "Verification Required",
-          description: "Please check your WhatsApp for the verification code.",
-        });
       }
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message,
-      });
     } finally {
       setIsLoading(false);
     }
@@ -86,34 +55,7 @@ export default function AuthPage() {
   async function onSubmitVerification(data: VerificationForm) {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/verify', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-        credentials: 'include',
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        toast({
-          variant: "destructive",
-          title: "Verification failed",
-          description: result.message,
-        });
-        return;
-      }
-
-      // Refresh the page to update auth state
-      window.location.reload();
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message,
-      });
+      await verify(data.code);
     } finally {
       setIsLoading(false);
     }
