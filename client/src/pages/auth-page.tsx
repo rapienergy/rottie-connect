@@ -142,6 +142,7 @@ export default function AuthPage() {
                           placeholder="Enter 6-digit code"
                           disabled={isLoading}
                           className="text-center text-2xl tracking-wider"
+                          value={field.value}
                           onChange={(e) => {
                             const value = e.target.value.replace(/[^0-9]/g, '');
                             if (value.length <= 6) {
