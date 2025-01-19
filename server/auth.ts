@@ -8,6 +8,7 @@ import { promisify } from "util";
 import { users, insertUserSchema, type User } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
+import { VerificationService } from "./verification";
 
 const scryptAsync = promisify(scrypt);
 const crypto = {
@@ -122,14 +123,14 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // Login endpoint
+  // Login endpoint with two-step verification
   app.post("/api/login", (req, res, next) => {
     const result = insertUserSchema.safeParse(req.body);
     if (!result.success) {
       return res.status(400).send("Invalid input");
     }
 
-    passport.authenticate("local", (err: any, user: Express.User, info: IVerifyOptions) => {
+    passport.authenticate("local", async (err: any, user: Express.User, info: IVerifyOptions) => {
       if (err) {
         return next(err);
       }
@@ -139,19 +140,80 @@ export function setupAuth(app: Express) {
           message: info.message || "Authentication failed"
         });
       }
-      req.logIn(user, (err) => {
-        if (err) {
-          return next(err);
-        }
+
+      try {
+        // Send verification code to WhatsApp
+        const verificationCode = await VerificationService.createVerification("+5215584277211");
+
+        // Store user data in session for verification step
+        req.session.pendingUser = {
+          id: user.id,
+          username: user.username
+        };
+
         return res.json({
           success: true,
-          user: {
-            id: user.id,
-            username: user.username
-          }
+          message: "Verification code sent to WhatsApp",
+          requireVerification: true
         });
-      });
+      } catch (error: any) {
+        console.error('Verification error:', error);
+        return res.status(500).json({
+          success: false,
+          message: error.message || "Error sending verification code"
+        });
+      }
     })(req, res, next);
+  });
+
+  // Verify WhatsApp code endpoint
+  app.post("/api/verify", async (req, res, next) => {
+    const { code } = req.body;
+    const pendingUser = req.session.pendingUser;
+
+    if (!pendingUser) {
+      return res.status(400).json({
+        success: false,
+        message: "No pending verification"
+      });
+    }
+
+    try {
+      const verified = await VerificationService.verifyCode("+5215584277211", code);
+      if (verified) {
+        // Complete login
+        const [user] = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, pendingUser.id))
+          .limit(1);
+
+        req.login(user, (err) => {
+          if (err) {
+            return next(err);
+          }
+          // Clear pending user
+          delete req.session.pendingUser;
+          return res.json({
+            success: true,
+            user: {
+              id: user.id,
+              username: user.username
+            }
+          });
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          message: "Invalid verification code"
+        });
+      }
+    } catch (error: any) {
+      return res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
   });
 
   // Logout endpoint

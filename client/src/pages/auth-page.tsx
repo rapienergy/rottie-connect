@@ -14,14 +14,20 @@ const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+const verificationSchema = z.object({
+  code: z.string().length(6, "Verification code must be 6 digits"),
+});
+
 type LoginForm = z.infer<typeof loginSchema>;
+type VerificationForm = z.infer<typeof verificationSchema>;
 
 export default function AuthPage() {
   const { login } = useUser();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [showVerification, setShowVerification] = useState(false);
 
-  const form = useForm<LoginForm>({
+  const loginForm = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
       username: "",
@@ -29,17 +35,79 @@ export default function AuthPage() {
     },
   });
 
-  async function onSubmit(data: LoginForm) {
+  const verificationForm = useForm<VerificationForm>({
+    resolver: zodResolver(verificationSchema),
+    defaultValues: {
+      code: "",
+    },
+  });
+
+  async function onSubmitLogin(data: LoginForm) {
     setIsLoading(true);
     try {
-      const result = await login(data);
-      if (!result.ok) {
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+        credentials: 'include',
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
         toast({
           variant: "destructive",
           title: "Authentication failed",
           description: result.message,
         });
+        return;
       }
+
+      if (result.requireVerification) {
+        setShowVerification(true);
+        toast({
+          title: "Verification Required",
+          description: "Please check your WhatsApp for the verification code.",
+        });
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function onSubmitVerification(data: VerificationForm) {
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+        credentials: 'include',
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        toast({
+          variant: "destructive",
+          title: "Verification failed",
+          description: result.message,
+        });
+        return;
+      }
+
+      // Refresh the page to update auth state
+      window.location.reload();
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -57,58 +125,95 @@ export default function AuthPage() {
         <CardHeader className="text-center">
           <CardTitle>RottieConnect Login</CardTitle>
           <CardDescription>
-            Enter your credentials to access the platform
+            {showVerification 
+              ? "Enter the verification code sent to your WhatsApp"
+              : "Enter your credentials to access the platform"
+            }
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="username"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Username</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        autoComplete="username"
-                        disabled={isLoading}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        type="password"
-                        autoComplete="current-password"
-                        disabled={isLoading}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <CardFooter className="px-0">
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={isLoading}
-                >
-                  {isLoading ? "Authenticating..." : "Login"}
-                </Button>
-              </CardFooter>
-            </form>
-          </Form>
+          {!showVerification ? (
+            <Form {...loginForm}>
+              <form onSubmit={loginForm.handleSubmit(onSubmitLogin)} className="space-y-4">
+                <FormField
+                  control={loginForm.control}
+                  name="username"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Username</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          autoComplete="username"
+                          disabled={isLoading}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={loginForm.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Password</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="password"
+                          autoComplete="current-password"
+                          disabled={isLoading}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <CardFooter className="px-0">
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? "Authenticating..." : "Login"}
+                  </Button>
+                </CardFooter>
+              </form>
+            </Form>
+          ) : (
+            <Form {...verificationForm}>
+              <form onSubmit={verificationForm.handleSubmit(onSubmitVerification)} className="space-y-4">
+                <FormField
+                  control={verificationForm.control}
+                  name="code"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Verification Code</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          maxLength={6}
+                          placeholder="Enter 6-digit code"
+                          disabled={isLoading}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <CardFooter className="px-0">
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? "Verifying..." : "Verify"}
+                  </Button>
+                </CardFooter>
+              </form>
+            </Form>
+          )}
         </CardContent>
       </Card>
     </div>
