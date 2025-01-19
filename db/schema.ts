@@ -1,6 +1,21 @@
 import { pgTable, text, serial, timestamp, json, index, boolean, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 
+// User schema for ROTTIE authentication
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  username: text("username").unique().notNull(),
+  password: text("password").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  usernameIdx: index("username_idx").on(table.username)
+}));
+
+export const insertUserSchema = createInsertSchema(users);
+export const selectUserSchema = createSelectSchema(users);
+export type User = typeof users.$inferSelect;
+
+// Keep existing message and verification schemas
 export const messages = pgTable("messages", {
   id: serial("id").primaryKey(),
   contactNumber: text("contact_number").notNull(),
@@ -32,7 +47,6 @@ export const messages = pgTable("messages", {
 
 export const insertMessageSchema = createInsertSchema(messages);
 export const selectMessageSchema = createSelectSchema(messages);
-
 export type Message = typeof messages.$inferSelect;
 
 export const verificationCodes = pgTable("verification_codes", {
@@ -52,5 +66,4 @@ export const verificationCodes = pgTable("verification_codes", {
 
 export const insertVerificationSchema = createInsertSchema(verificationCodes);
 export const selectVerificationSchema = createSelectSchema(verificationCodes);
-
 export type VerificationCode = typeof verificationCodes.$inferSelect;

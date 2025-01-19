@@ -2,29 +2,49 @@ import { Switch, Route, Link } from "wouter";
 import { Dashboard } from "@/pages/Dashboard";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { AlertCircle, MessageSquare } from "lucide-react";
+import { AlertCircle, MessageSquare, Loader2 } from "lucide-react";
 import { useEffect } from "react";
 import { connectWebSocket, disconnectWebSocket } from "@/lib/socket";
+import { useUser } from "@/hooks/use-user";
+import AuthPage from "@/pages/auth-page";
 
 function App() {
+  const { user, isLoading } = useUser();
+
   useEffect(() => {
     connectWebSocket();
     return () => disconnectWebSocket();
   }, []);
 
+  // Show loading state while checking authentication
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-border" />
+      </div>
+    );
+  }
+
+  // Show login page if not authenticated
+  if (!user) {
+    return <AuthPage />;
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <nav className="border-b bg-card">
         <div className="container mx-auto px-4 py-4">
-          <Link href="/" className="flex flex-col items-start">
-            <div className="flex items-center space-x-2">
-              <MessageSquare className="h-6 w-6" />
-              <span className="font-semibold text-lg">Rottie Connect</span>
-            </div>
-            <span className="text-sm text-muted-foreground ml-8">
-              Rapienergy Enterprise Interactions Platform
-            </span>
-          </Link>
+          <div className="flex justify-between items-center">
+            <Link href="/" className="flex flex-col items-start">
+              <div className="flex items-center space-x-2">
+                <MessageSquare className="h-6 w-6" />
+                <span className="font-semibold text-lg">Rottie Connect</span>
+              </div>
+              <span className="text-sm text-muted-foreground ml-8">
+                Rapienergy Enterprise Interactions Platform
+              </span>
+            </Link>
+          </div>
         </div>
       </nav>
 
