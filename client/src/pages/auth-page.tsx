@@ -43,7 +43,8 @@ export default function AuthPage() {
   // Reset forms when switching modes
   useEffect(() => {
     if (showVerification) {
-      verificationForm.reset({ code: "" });
+      verificationForm.reset();
+      verificationForm.setValue('code', '');
     } else {
       loginForm.reset();
     }
