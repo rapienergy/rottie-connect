@@ -19,11 +19,11 @@ export const swaggerDocument: OpenAPIV3.Document = {
   ],
   components: {
     securitySchemes: {
-      ApiKeyAuth: {
+      RottieApiKey: {
         type: 'apiKey',
         in: 'header',
-        name: 'X-API-Key',
-        description: 'API key for authentication'
+        name: 'X-ROTTIE-API-KEY',
+        description: 'ROTTIE API key for authentication'
       },
       TwoStepAuth: {
         type: 'apiKey',
@@ -120,10 +120,10 @@ export const swaggerDocument: OpenAPIV3.Document = {
     '/api/messages': {
       post: {
         summary: 'Send a message',
-        description: 'Send a message through WhatsApp or other channels. Requires two-step verification.',
+        description: 'Send a message through WhatsApp or other channels. Requires ROTTIE API key and two-step verification.',
         security: [
-          { 
-            ApiKeyAuth: [],
+          {
+            RottieApiKey: [],
             TwoStepAuth: [],
             PhoneNumberAuth: []
           }
@@ -170,18 +170,8 @@ export const swaggerDocument: OpenAPIV3.Document = {
               }
             }
           },
-          '400': {
-            description: 'Invalid request',
-            content: {
-              'application/json': {
-                schema: {
-                  $ref: '#/components/schemas/Error'
-                }
-              }
-            }
-          },
           '401': {
-            description: 'Unauthorized - Missing or invalid verification code',
+            description: 'Unauthorized - Invalid API key or missing verification',
             content: {
               'application/json': {
                 schema: {
@@ -193,13 +183,23 @@ export const swaggerDocument: OpenAPIV3.Document = {
                     },
                     code: {
                       type: 'string',
-                      example: 'VERIFICATION_REQUIRED'
+                      enum: ['INVALID_API_KEY', 'VERIFICATION_REQUIRED']
                     },
                     message: {
                       type: 'string',
-                      example: 'Two-step verification required. Please include x-phone-number and x-verification-code headers.'
+                      example: 'Invalid or missing ROTTIE API key'
                     }
                   }
+                }
+              }
+            }
+          },
+          '400': {
+            description: 'Invalid request parameters',
+            content: {
+              'application/json': {
+                schema: {
+                  $ref: '#/components/schemas/Error'
                 }
               }
             }

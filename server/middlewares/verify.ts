@@ -10,12 +10,24 @@ const VERIFY_EXEMPT_PATHS = [
   '/api/test-verification'
 ];
 
+const ROTTIE_API_KEY = process.env.ROTTIE_API_KEY;
+
 export async function verifyTwoStep(req: Request, res: Response, next: NextFunction) {
   try {
     // Skip verification for exempt paths and development mode
     if (VERIFY_EXEMPT_PATHS.some(path => req.path.startsWith(path)) || 
         process.env.NODE_ENV === 'development') {
       return next();
+    }
+
+    // Check for ROTTIE API key first
+    const rottieApiKey = req.headers['x-rottie-api-key'] as string;
+    if (!rottieApiKey || rottieApiKey !== ROTTIE_API_KEY) {
+      return res.status(401).json({
+        error: true,
+        code: 'INVALID_API_KEY',
+        message: 'Invalid or missing ROTTIE API key'
+      });
     }
 
     const phoneNumber = req.headers['x-phone-number'] as string;
