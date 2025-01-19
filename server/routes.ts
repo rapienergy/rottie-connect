@@ -8,6 +8,7 @@ import twilio from "twilio";
 import type { Twilio } from "twilio";
 import { randomBytes } from 'crypto';
 import { VerificationService } from "./verification";
+import { setupAuth } from "./auth";  // Add this import
 
 // Initialize Twilio client with error handling
 let twilioClient: Twilio | null = null;
@@ -125,6 +126,9 @@ function validatePhoneNumber(phone: string): { isValid: boolean; error?: string 
 }
 
 export function registerRoutes(app: Express): Server {
+  // Initialize authentication first
+  setupAuth(app);
+
   const httpServer = createServer(app);
 
   // Add API key generation endpoint
@@ -960,8 +964,7 @@ export function registerRoutes(app: Express): Server {
             code: 'INVALID_CODE_FORMAT',
             message: 'Verification code must be 6 digits'
           }
-        });
-      }
+        });      }
 
       try {
         await VerificationService.verifyCode(phoneNumber, code);
