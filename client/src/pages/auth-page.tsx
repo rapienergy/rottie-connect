@@ -135,9 +135,19 @@ export default function AuthPage() {
                       <FormControl>
                         <Input
                           {...field}
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           maxLength={6}
                           placeholder="Enter 6-digit code"
                           disabled={isLoading}
+                          className="text-center text-2xl tracking-wider"
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/[^0-9]/g, '');
+                            if (value.length <= 6) {
+                              field.onChange(value);
+                            }
+                          }}
                         />
                       </FormControl>
                       <FormMessage />
