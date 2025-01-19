@@ -46,6 +46,8 @@ export default function AuthPage() {
       const result = await login(data);
       if (result.requireVerification) {
         setShowVerification(true);
+        // Reset verification form when showing it
+        verificationForm.reset({ code: "" });
       }
     } finally {
       setIsLoading(false);
@@ -134,7 +136,6 @@ export default function AuthPage() {
                       <FormLabel>Verification Code</FormLabel>
                       <FormControl>
                         <Input
-                          {...field}
                           type="text"
                           inputMode="numeric"
                           pattern="[0-9]*"
@@ -142,6 +143,7 @@ export default function AuthPage() {
                           placeholder="Enter 6-digit code"
                           disabled={isLoading}
                           className="text-center text-2xl tracking-wider"
+                          {...field}
                           value={field.value}
                           onChange={(e) => {
                             const value = e.target.value.replace(/[^0-9]/g, '');
