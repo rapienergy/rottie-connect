@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -40,14 +40,21 @@ export default function AuthPage() {
     },
   });
 
+  // Reset forms when switching modes
+  useEffect(() => {
+    if (showVerification) {
+      verificationForm.reset({ code: "" });
+    } else {
+      loginForm.reset();
+    }
+  }, [showVerification]);
+
   async function onSubmitLogin(data: LoginForm) {
     setIsLoading(true);
     try {
       const result = await login(data);
       if (result.requireVerification) {
         setShowVerification(true);
-        // Reset verification form when showing it
-        verificationForm.reset({ code: "" });
       }
     } finally {
       setIsLoading(false);
@@ -144,7 +151,6 @@ export default function AuthPage() {
                           disabled={isLoading}
                           className="text-center text-2xl tracking-wider"
                           {...field}
-                          value={field.value}
                           onChange={(e) => {
                             const value = e.target.value.replace(/[^0-9]/g, '');
                             if (value.length <= 6) {
