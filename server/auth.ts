@@ -5,12 +5,23 @@ import session from "express-session";
 import createMemoryStore from "memorystore";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
-import { users, insertUserSchema, type User } from "@db/schema";
+import { users, type User } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
 import { VerificationService } from "./verification";
 
 const scryptAsync = promisify(scrypt);
+
+// Extend express session
+declare module "express-session" {
+  interface SessionData {
+    pendingUser?: {
+      id: number;
+      username: string;
+    };
+  }
+}
+
 const crypto = {
   hash: async (password: string) => {
     const salt = randomBytes(16).toString("hex");
@@ -28,13 +39,6 @@ const crypto = {
     return timingSafeEqual(hashedPasswordBuf, suppliedPasswordBuf);
   },
 };
-
-// Extend express user object with our schema
-declare global {
-  namespace Express {
-    interface User extends User { }
-  }
-}
 
 export async function createInitialUser() {
   try {
@@ -75,7 +79,7 @@ export function setupAuth(app: Express) {
     app.set("trust proxy", 1);
     sessionSettings.cookie = {
       secure: true,
-      sameSite: 'strict'
+      sameSite: 'lax'
     };
   }
 
@@ -86,6 +90,7 @@ export function setupAuth(app: Express) {
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
+        console.log('Attempting login for username:', username);
         const [user] = await db
           .select()
           .from(users)
@@ -93,20 +98,26 @@ export function setupAuth(app: Express) {
           .limit(1);
 
         if (!user) {
+          console.log('User not found');
           return done(null, false, { message: "Invalid credentials" });
         }
+
         const isMatch = await crypto.compare(password, user.password);
         if (!isMatch) {
+          console.log('Password mismatch');
           return done(null, false, { message: "Invalid credentials" });
         }
+
+        console.log('Login successful for user:', username);
         return done(null, user);
       } catch (err) {
+        console.error('Login error:', err);
         return done(err);
       }
     })
   );
 
-  passport.serializeUser((user, done) => {
+  passport.serializeUser((user: User, done) => {
     done(null, user.id);
   });
 
@@ -125,59 +136,47 @@ export function setupAuth(app: Express) {
 
   // Login endpoint with two-step verification
   app.post("/api/login", (req, res, next) => {
-    try {
-      const result = insertUserSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({
+    console.log('Login attempt:', req.body);
+    passport.authenticate("local", async (err: any, user: User | false, info: IVerifyOptions) => {
+      if (err) {
+        console.error('Authentication error:', err);
+        return res.status(500).json({
           success: false,
-          message: "Invalid input",
-          errors: result.error.errors
+          message: "Internal server error"
         });
       }
 
-      passport.authenticate("local", async (err: any, user: Express.User, info: IVerifyOptions) => {
-        if (err) {
-          return res.status(500).json({
-            success: false,
-            message: "Internal server error"
-          });
-        }
-        if (!user) {
-          return res.status(401).json({
-            success: false,
-            message: info.message || "Authentication failed"
-          });
-        }
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: info.message || "Authentication failed"
+        });
+      }
 
-        try {
-          // Send verification code to WhatsApp
-          const verificationCode = await VerificationService.createVerification("+5215584277211");
+      try {
+        // Send verification code to WhatsApp
+        const verificationCode = await VerificationService.createVerification("+5215584277211");
+        console.log('Verification code sent:', verificationCode);
 
-          // Store user data in session for verification step
-          req.session.pendingUser = {
-            id: user.id,
-            username: user.username
-          };
+        // Store user data in session for verification step
+        req.session.pendingUser = {
+          id: user.id,
+          username: user.username
+        };
 
-          return res.json({
-            success: true,
-            message: "Verification code sent to WhatsApp",
-            requireVerification: true
-          });
-        } catch (error: any) {
-          console.error('Verification error:', error);
-          return res.status(500).json({
-            success: false,
-            message: error.message || "Error sending verification code"
-          });
-        }
-      })(req, res, next);
-    } catch (error) {
-      return res.status(500).json({
-        success: false,
-        message: "Internal server error"
-      });
-    }
+        return res.json({
+          success: true,
+          message: "Verification code sent to WhatsApp",
+          requireVerification: true
+        });
+      } catch (error: any) {
+        console.error('Verification error:', error);
+        return res.status(500).json({
+          success: false,
+          message: error.message || "Error sending verification code"
+        });
+      }
+    })(req, res, next);
   });
 
   // Verify WhatsApp code endpoint
@@ -201,6 +200,10 @@ export function setupAuth(app: Express) {
           .from(users)
           .where(eq(users.id, pendingUser.id))
           .limit(1);
+
+        if (!user) {
+          throw new Error("User not found");
+        }
 
         req.login(user, (err) => {
           if (err) {

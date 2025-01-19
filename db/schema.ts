@@ -14,6 +14,7 @@ export const users = pgTable("users", {
 export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
 export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
 
 // Keep existing message and verification schemas
 export const messages = pgTable("messages", {
