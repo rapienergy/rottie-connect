@@ -24,6 +24,18 @@ export const swaggerDocument: OpenAPIV3.Document = {
         in: 'header',
         name: 'X-API-Key',
         description: 'API key for authentication'
+      },
+      TwoStepAuth: {
+        type: 'apiKey',
+        in: 'header',
+        name: 'x-verification-code',
+        description: 'Verification code received via WhatsApp'
+      },
+      PhoneNumberAuth: {
+        type: 'apiKey',
+        in: 'header',
+        name: 'x-phone-number',
+        description: 'Phone number used for verification'
       }
     },
     schemas: {
@@ -108,8 +120,14 @@ export const swaggerDocument: OpenAPIV3.Document = {
     '/api/messages': {
       post: {
         summary: 'Send a message',
-        description: 'Send a message through WhatsApp or other channels',
-        security: [{ ApiKeyAuth: [] }],
+        description: 'Send a message through WhatsApp or other channels. Requires two-step verification.',
+        security: [
+          { 
+            ApiKeyAuth: [],
+            TwoStepAuth: [],
+            PhoneNumberAuth: []
+          }
+        ],
         requestBody: {
           required: true,
           content: {
@@ -163,11 +181,25 @@ export const swaggerDocument: OpenAPIV3.Document = {
             }
           },
           '401': {
-            description: 'Unauthorized - Invalid or missing API key',
+            description: 'Unauthorized - Missing or invalid verification code',
             content: {
               'application/json': {
                 schema: {
-                  $ref: '#/components/schemas/Error'
+                  type: 'object',
+                  properties: {
+                    error: {
+                      type: 'boolean',
+                      example: true
+                    },
+                    code: {
+                      type: 'string',
+                      example: 'VERIFICATION_REQUIRED'
+                    },
+                    message: {
+                      type: 'string',
+                      example: 'Two-step verification required. Please include x-phone-number and x-verification-code headers.'
+                    }
+                  }
                 }
               }
             }
