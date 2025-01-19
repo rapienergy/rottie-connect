@@ -9,6 +9,7 @@ import { users, type User } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
 import { VerificationService } from "./verification";
+import { CONFIG } from "./config";
 
 const scryptAsync = promisify(scrypt);
 
@@ -80,11 +81,11 @@ export async function createInitialUser() {
 export function setupAuth(app: Express) {
   const MemoryStore = createMemoryStore(session);
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.REPL_ID || "rottie-connect-session",
+    secret: process.env.REPL_ID || CONFIG.SESSION.COOKIE_NAME,
     resave: false,
     saveUninitialized: false,
     cookie: {
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      maxAge: CONFIG.SESSION.MAX_AGE
     },
     store: new MemoryStore({
       checkPeriod: 86400000, // prune expired entries every 24h
@@ -172,7 +173,7 @@ export function setupAuth(app: Express) {
       try {
         console.log('Creating verification for user:', user.username);
         // Send verification code to WhatsApp
-        const verificationCode = await VerificationService.createVerification("+5215584277211");
+        const verificationCode = await VerificationService.createVerification(CONFIG.VERIFICATION.TEST_PHONE_NUMBER);
         console.log('Verification code created:', verificationCode);
 
         // Store user data in session for verification step
@@ -211,7 +212,7 @@ export function setupAuth(app: Express) {
 
     try {
       console.log('Verifying code for pending user:', pendingUser);
-      const verified = await VerificationService.verifyCode("+5215584277211", code);
+      const verified = await VerificationService.verifyCode(CONFIG.VERIFICATION.TEST_PHONE_NUMBER, code);
       if (verified) {
         // Complete login
         const user = await db.query.users.findFirst({
