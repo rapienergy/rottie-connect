@@ -4,7 +4,7 @@ export const CONFIG = {
     CODE_LENGTH: 6,
     CODE_EXPIRY_MINUTES: 5,
     MAX_ATTEMPTS: 3,
-    COOLDOWN_MINUTES: 15,
+    COOLDOWN_MINUTES: 1, // Reduced from 15 to 1 minute for testing
   },
   SESSION: {
     MAX_AGE: 24 * 60 * 60 * 1000, // 24 hours
