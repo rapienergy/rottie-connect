@@ -23,43 +23,57 @@ declare module "express-session" {
 }
 
 const crypto = {
-  hash: async (password: string) => {
+  hash: async (password: string): Promise<string> => {
     const salt = randomBytes(16).toString("hex");
-    const buf = (await scryptAsync(password, salt, 64)) as Buffer;
+    const buf = await scryptAsync(password, salt, 64) as Buffer;
     return `${buf.toString("hex")}.${salt}`;
   },
-  compare: async (suppliedPassword: string, storedPassword: string) => {
-    const [hashedPassword, salt] = storedPassword.split(".");
-    const hashedPasswordBuf = Buffer.from(hashedPassword, "hex");
-    const suppliedPasswordBuf = (await scryptAsync(
-      suppliedPassword,
-      salt,
-      64
-    )) as Buffer;
-    return timingSafeEqual(hashedPasswordBuf, suppliedPasswordBuf);
+  compare: async (suppliedPassword: string, storedPassword: string): Promise<boolean> => {
+    try {
+      const [hashedPassword, salt] = storedPassword.split(".");
+      if (!hashedPassword || !salt) {
+        console.error('Invalid stored password format');
+        return false;
+      }
+      const hashedPasswordBuf = Buffer.from(hashedPassword, "hex");
+      const suppliedPasswordBuf = await scryptAsync(suppliedPassword, salt, 64) as Buffer;
+      return timingSafeEqual(hashedPasswordBuf, suppliedPasswordBuf);
+    } catch (error) {
+      console.error('Error comparing passwords:', error);
+      return false;
+    }
   },
 };
 
 export async function createInitialUser() {
   try {
+    console.log('Checking for ROTTIE user...');
     // Check if ROTTIE user exists
-    const [existingUser] = await db
-      .select()
-      .from(users)
-      .where(eq(users.username, 'ROTTIE'))
-      .limit(1);
+    const existingUser = await db.query.users.findFirst({
+      where: eq(users.username, 'ROTTIE'),
+    });
 
     if (!existingUser) {
+      console.log('Creating ROTTIE user...');
       // Create ROTTIE user with specified password
       const hashedPassword = await crypto.hash('R11r11r');
       await db.insert(users).values({
         username: 'ROTTIE',
         password: hashedPassword,
       });
-      console.log('Created initial ROTTIE user');
+      console.log('Created initial ROTTIE user successfully');
+    } else {
+      console.log('ROTTIE user already exists');
+      // Update password if needed
+      const hashedPassword = await crypto.hash('R11r11r');
+      await db.update(users)
+        .set({ password: hashedPassword })
+        .where(eq(users.username, 'ROTTIE'));
+      console.log('Updated ROTTIE user password');
     }
   } catch (error) {
-    console.error('Error creating initial user:', error);
+    console.error('Error managing initial user:', error);
+    throw error; // Rethrow to handle it in the setup
   }
 }
 
@@ -69,7 +83,9 @@ export function setupAuth(app: Express) {
     secret: process.env.REPL_ID || "rottie-connect-session",
     resave: false,
     saveUninitialized: false,
-    cookie: {},
+    cookie: {
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    },
     store: new MemoryStore({
       checkPeriod: 86400000, // prune expired entries every 24h
     }),
@@ -78,6 +94,7 @@ export function setupAuth(app: Express) {
   if (app.get("env") === "production") {
     app.set("trust proxy", 1);
     sessionSettings.cookie = {
+      ...sessionSettings.cookie,
       secure: true,
       sameSite: 'lax'
     };
@@ -91,20 +108,18 @@ export function setupAuth(app: Express) {
     new LocalStrategy(async (username, password, done) => {
       try {
         console.log('Attempting login for username:', username);
-        const [user] = await db
-          .select()
-          .from(users)
-          .where(eq(users.username, username))
-          .limit(1);
+        const user = await db.query.users.findFirst({
+          where: eq(users.username, username),
+        });
 
         if (!user) {
-          console.log('User not found');
+          console.log('User not found:', username);
           return done(null, false, { message: "Invalid credentials" });
         }
 
         const isMatch = await crypto.compare(password, user.password);
         if (!isMatch) {
-          console.log('Password mismatch');
+          console.log('Password mismatch for user:', username);
           return done(null, false, { message: "Invalid credentials" });
         }
 
@@ -118,18 +133,19 @@ export function setupAuth(app: Express) {
   );
 
   passport.serializeUser((user: User, done) => {
+    console.log('Serializing user:', user.id);
     done(null, user.id);
   });
 
   passport.deserializeUser(async (id: number, done) => {
     try {
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, id))
-        .limit(1);
+      console.log('Deserializing user:', id);
+      const user = await db.query.users.findFirst({
+        where: eq(users.id, id),
+      });
       done(null, user);
     } catch (err) {
+      console.error('Deserialization error:', err);
       done(err);
     }
   });
@@ -154,15 +170,17 @@ export function setupAuth(app: Express) {
       }
 
       try {
+        console.log('Creating verification for user:', user.username);
         // Send verification code to WhatsApp
         const verificationCode = await VerificationService.createVerification("+5215584277211");
-        console.log('Verification code sent:', verificationCode);
+        console.log('Verification code created:', verificationCode);
 
         // Store user data in session for verification step
         req.session.pendingUser = {
           id: user.id,
           username: user.username
         };
+        console.log('Stored pending user in session:', req.session.pendingUser);
 
         return res.json({
           success: true,
@@ -192,14 +210,13 @@ export function setupAuth(app: Express) {
     }
 
     try {
+      console.log('Verifying code for pending user:', pendingUser);
       const verified = await VerificationService.verifyCode("+5215584277211", code);
       if (verified) {
         // Complete login
-        const [user] = await db
-          .select()
-          .from(users)
-          .where(eq(users.id, pendingUser.id))
-          .limit(1);
+        const user = await db.query.users.findFirst({
+          where: eq(users.id, pendingUser.id),
+        });
 
         if (!user) {
           throw new Error("User not found");
@@ -207,6 +224,7 @@ export function setupAuth(app: Express) {
 
         req.login(user, (err) => {
           if (err) {
+            console.error('Login error after verification:', err);
             return res.status(500).json({
               success: false,
               message: "Error completing login"
@@ -229,6 +247,7 @@ export function setupAuth(app: Express) {
         });
       }
     } catch (error: any) {
+      console.error('Verification error:', error);
       return res.status(400).json({
         success: false,
         message: error.message
@@ -239,9 +258,10 @@ export function setupAuth(app: Express) {
   // Get current user
   app.get("/api/user", (req, res) => {
     if (req.isAuthenticated()) {
+      const user = req.user as User;
       return res.json({
-        id: req.user.id,
-        username: req.user.username
+        id: user.id,
+        username: user.username
       });
     }
     res.status(401).json({
@@ -251,5 +271,7 @@ export function setupAuth(app: Express) {
   });
 
   // Create initial ROTTIE user
-  createInitialUser();
+  createInitialUser().catch(error => {
+    console.error('Failed to create initial user:', error);
+  });
 }
