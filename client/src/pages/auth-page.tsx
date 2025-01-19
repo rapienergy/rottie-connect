@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useUser } from "@/hooks/use-user";
-import { OTPInput } from "input-otp";
 
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
@@ -25,6 +24,8 @@ export default function AuthPage() {
   const { login, verify } = useUser();
   const [isLoading, setIsLoading] = useState(false);
   const [showVerification, setShowVerification] = useState(false);
+  const [digits, setDigits] = useState(['', '', '', '', '', '']);
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const loginForm = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -45,6 +46,7 @@ export default function AuthPage() {
   useEffect(() => {
     if (showVerification) {
       verificationForm.reset();
+      setDigits(['', '', '', '', '', '']);
     } else {
       loginForm.reset();
     }
@@ -70,6 +72,28 @@ export default function AuthPage() {
       setIsLoading(false);
     }
   }
+
+  const handleDigitChange = (index: number, value: string) => {
+    if (!/^\d*$/.test(value)) return; // Only allow digits
+
+    const newDigits = [...digits];
+    newDigits[index] = value;
+    setDigits(newDigits);
+
+    // Update the form value
+    verificationForm.setValue('code', newDigits.join(''));
+
+    // Auto-focus next input
+    if (value && index < 5) {
+      inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !digits[index] && index > 0) {
+      inputRefs.current[index - 1]?.focus();
+    }
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
@@ -143,26 +167,22 @@ export default function AuthPage() {
                     <FormItem>
                       <FormLabel>Verification Code</FormLabel>
                       <FormControl>
-                        <div className="flex justify-center">
-                          <OTPInput
-                            maxLength={6}
-                            containerClassName="group flex items-center gap-2"
-                            render={({ slots }) => (
-                              <>
-                                {slots.map((slot, idx) => (
-                                  <div key={idx}>
-                                    <input
-                                      {...slot}
-                                      className="w-10 h-12 text-center text-2xl border rounded focus:border-primary focus:ring-1 focus:ring-primary"
-                                      disabled={isLoading}
-                                    />
-                                  </div>
-                                ))}
-                              </>
-                            )}
-                            onChange={(value) => field.onChange(value)}
-                            value={field.value}
-                          />
+                        <div className="flex justify-center gap-2">
+                          {digits.map((digit, index) => (
+                            <input
+                              key={index}
+                              ref={el => inputRefs.current[index] = el}
+                              type="text"
+                              inputMode="numeric"
+                              pattern="\d*"
+                              maxLength={1}
+                              value={digit}
+                              onChange={(e) => handleDigitChange(index, e.target.value)}
+                              onKeyDown={(e) => handleKeyDown(index, e)}
+                              className="w-12 h-14 text-center text-2xl border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                              disabled={isLoading}
+                            />
+                          ))}
                         </div>
                       </FormControl>
                       <FormMessage />
@@ -173,7 +193,7 @@ export default function AuthPage() {
                   <Button
                     type="submit"
                     className="w-full"
-                    disabled={isLoading}
+                    disabled={isLoading || digits.join('').length !== 6}
                   >
                     {isLoading ? "Verifying..." : "Verify"}
                   </Button>
