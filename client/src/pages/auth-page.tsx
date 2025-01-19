@@ -179,7 +179,7 @@ export default function AuthPage() {
                               value={digit}
                               onChange={(e) => handleDigitChange(index, e.target.value)}
                               onKeyDown={(e) => handleKeyDown(index, e)}
-                              className="w-12 h-14 text-center text-2xl border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                              className="w-12 h-14 text-center text-2xl border rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-background text-foreground"
                               disabled={isLoading}
                             />
                           ))}
