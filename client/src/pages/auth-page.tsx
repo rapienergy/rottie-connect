@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useUser } from "@/hooks/use-user";
+import { OTPInput } from "input-otp";
 
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
@@ -44,7 +45,6 @@ export default function AuthPage() {
   useEffect(() => {
     if (showVerification) {
       verificationForm.reset();
-      verificationForm.setValue('code', '');
     } else {
       loginForm.reset();
     }
@@ -143,22 +143,27 @@ export default function AuthPage() {
                     <FormItem>
                       <FormLabel>Verification Code</FormLabel>
                       <FormControl>
-                        <Input
-                          type="text"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          maxLength={6}
-                          placeholder="Enter 6-digit code"
-                          disabled={isLoading}
-                          className="text-center text-2xl tracking-wider"
-                          {...field}
-                          onChange={(e) => {
-                            const value = e.target.value.replace(/[^0-9]/g, '');
-                            if (value.length <= 6) {
-                              field.onChange(value);
-                            }
-                          }}
-                        />
+                        <div className="flex justify-center">
+                          <OTPInput
+                            maxLength={6}
+                            containerClassName="group flex items-center gap-2"
+                            render={({ slots }) => (
+                              <>
+                                {slots.map((slot, idx) => (
+                                  <div key={idx}>
+                                    <input
+                                      {...slot}
+                                      className="w-10 h-12 text-center text-2xl border rounded focus:border-primary focus:ring-1 focus:ring-primary"
+                                      disabled={isLoading}
+                                    />
+                                  </div>
+                                ))}
+                              </>
+                            )}
+                            onChange={(value) => field.onChange(value)}
+                            value={field.value}
+                          />
+                        </div>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
