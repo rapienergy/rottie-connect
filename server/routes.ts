@@ -198,18 +198,18 @@ export function registerRoutes(app: Express): Server {
         to: toNumber,
         from: process.env.TWILIO_PHONE_NUMBER,
         twiml: `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say voice="Polly.Mia-Neural" language="es-MX">
-        Hola, gracias por atender nuestra llamada. Le estamos contactando de Rottie Connect.
-        Un representante se unirá a la llamada en breve.
-    </Say>
-    <Dial callerId="${process.env.TWILIO_PHONE_NUMBER}">
-        <Number>+525584277211</Number>
-    </Dial>
-    <Say voice="Polly.Mia-Neural" language="es-MX">
-        La llamada ha finalizado. Gracias por usar Rottie Connect.
-    </Say>
-</Response>`,
+        <Response>
+            <Say voice="Polly.Mia-Neural" language="es-MX">
+                Hola, gracias por atender nuestra llamada. Le estamos contactando de Rottie Connect.
+                Un representante se unirá a la llamada en breve.
+            </Say>
+            <Dial callerId="${process.env.TWILIO_PHONE_NUMBER}">
+                <Number>+525584277211</Number>
+            </Dial>
+            <Say voice="Polly.Mia-Neural" language="es-MX">
+                La llamada ha finalizado. Gracias por usar Rottie Connect.
+            </Say>
+        </Response>`,
         statusCallback: `${process.env.BASE_URL}/webhook`,
         statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
         record: true,
@@ -417,16 +417,16 @@ export function registerRoutes(app: Express): Server {
         }
         // Return TwiML response for calls
         return res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say voice="alice" language="es-MX">
-        Gracias por contestar. Esta es una llamada de prueba de Rottie Connect.
-    </Say>
-    <Play digits="1234"></Play>
-    <Pause length="1"/>
-    <Say voice="alice" language="es-MX">
-        Fin de la llamada de prueba. Gracias.
-    </Say>
-</Response>`);
+        <Response>
+            <Say voice="alice" language="es-MX">
+                Gracias por contestar. Esta es una llamada de prueba de Rottie Connect.
+            </Say>
+            <Play digits="1234"></Play>
+            <Pause length="1"/>
+            <Say voice="alice" language="es-MX">
+                Fin de la llamada de prueba. Gracias.
+            </Say>
+        </Response>`);
       }
 
       // Handle message status updates efficiently
@@ -955,13 +955,12 @@ export function registerRoutes(app: Express): Server {
           message: 'Phone number and verification code are required'
         });
       }
-
       // Validate code format
       if (!VerificationService.isValidCode(code)) {
         return res.status(400).json({
           success: false,
           error: {
-            code: 'INVALID_CODE_FORMAT',
+            code: 'INVALIDCODE_FORMAT',
             message: 'Verification code must be 6digits'
           }
         });
@@ -1253,5 +1252,156 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Add test WhatsApp message endpoint
+  app.post("/api/messages/test", async (_req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      const testNumber = "+5215584277211";
+      console.log('\n=== Sending Test WhatsApp Message ===');
+      console.log('To:', testNumber);
+      console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
+
+      const toNumber = formatWhatsAppNumber(testNumber);
+      console.log('Formatted number:', toNumber);
+
+      const message = await twilioClient.messages.create({
+        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+        to: toNumber,
+        body: `Test message from RottieConnect at ${new Date().toLocaleTimeString()}`
+      });
+
+      console.log('Message sent successfully:', message.sid);
+      console.log('Message status:', message.status);
+      console.log('==========================\n');
+
+      res.json({
+        success: true,
+        message: 'Test message sent successfully',
+        details: {
+          messageId: message.sid,
+          status: message.status,
+          to: message.to
+        }
+      });
+    } catch (error: any) {
+      console.error('Error sending test message:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          message: error.message,
+          code: error.code,
+          moreInfo: error.moreInfo
+        }
+      });
+    }
+  });
+
+  // Add test configuration verification endpoint
+  app.get("/api/verify/test-config", async (_req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+      if (!messagingServiceSid) {
+        throw new Error('Messaging Service SID not configured');
+      }
+
+      // Get Messaging Service details
+      const service = await twilioClient.messaging.v1.services(messagingServiceSid).fetch();
+
+      // Get phone numbers associated with the Messaging Service
+      const phoneNumbers = await twilioClient.messaging.v1
+        .services(messagingServiceSid)
+        .phoneNumbers
+        .list();
+
+      console.log('\n=== Twilio Configuration Status ===');
+      console.log('Service SID:', messagingServiceSid);
+      console.log('Service Name:', service.friendlyName);
+      console.log('Phone Numbers:', phoneNumbers.map(p => p.phoneNumber).join(', '));
+      console.log('================================\n');
+
+      res.json({
+        success: true,
+        config: {
+          accountSid: process.env.TWILIO_ACCOUNT_SID?.substring(0, 8) + '...',
+          messagingServiceSid: messagingServiceSid.substring(0, 8) + '...',
+          phoneNumber: process.env.TWILIO_PHONE_NUMBER,
+          service: {
+            friendlyName: service.friendlyName,
+            inboundRequestUrl: service.inboundRequestUrl
+          },
+          phoneNumbers: phoneNumbers.map(p => ({
+            number: p.phoneNumber,
+            capabilities: p.capabilities
+          }))
+        }
+      });
+    } catch (error: any) {
+      console.error('Error checking Twilio configuration:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          message: error.message,
+          code: error.code || 'CONFIG_CHECK_FAILED',
+          moreInfo: error.moreInfo
+        }
+      });
+    }
+  });
+
+  // Add test message sending endpoint
+  app.post("/api/verify/test-message", async (_req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      const testNumber = "+5215584277211";
+      console.log('\n=== Sending Test Message ===');
+      console.log('To:', testNumber);
+      console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
+
+      const toNumber = formatWhatsAppNumber(testNumber);
+      console.log('Formatted number:', toNumber);
+
+      const message = await twilioClient.messages.create({
+        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+        to: toNumber,
+        body: `Test message from RottieConnect at ${new Date().toLocaleTimeString()}`
+      });
+
+      console.log('Message sent successfully:', message.sid);
+      console.log('Message status:', message.status);
+      console.log('==========================\n');
+
+      res.json({
+        success: true,
+        message: 'Test message sent successfully',
+        details: {
+          messageId: message.sid,
+          status: message.status,
+          to: message.to
+        }
+      });
+    } catch (error: any) {
+      console.error('Error sending test message:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          message: error.message,
+          code: error.code || 'TEST_MESSAGE_FAILED',
+          moreInfo: error.moreInfo
+        }
+      });
+    }
+  });
+
   return httpServer;
+
 }
