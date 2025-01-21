@@ -1,4 +1,5 @@
 import { type OpenAPIV3 } from 'openapi-types';
+import { CONFIG } from './config';
 
 export const swaggerDocument: OpenAPIV3.Document = {
   openapi: '3.0.0',
@@ -44,8 +45,9 @@ export const swaggerDocument: OpenAPIV3.Document = {
         properties: {
           contactNumber: {
             type: 'string',
-            description: 'The recipient phone number',
-            example: '+5215512345678'
+            description: 'The recipient phone number in E.164 format (e.g., +5215512345678)',
+            example: '+5215512345678',
+            pattern: '\\+[1-9]\\d{1,14}'
           },
           content: {
             type: 'string',
@@ -66,8 +68,9 @@ export const swaggerDocument: OpenAPIV3.Document = {
         properties: {
           phoneNumber: {
             type: 'string',
-            description: 'Phone number to verify (Mexican format)',
-            example: '+5215512345678'
+            description: 'Phone number in E.164 format (e.g., +5215512345678)',
+            example: '+5215512345678',
+            pattern: '\\+[1-9]\\d{1,14}'
           }
         },
         required: ['phoneNumber']
@@ -77,13 +80,15 @@ export const swaggerDocument: OpenAPIV3.Document = {
         properties: {
           phoneNumber: {
             type: 'string',
-            description: 'Phone number being verified',
-            example: '+5215512345678'
+            description: 'Phone number in E.164 format',
+            example: '+5215512345678',
+            pattern: '\\+[1-9]\\d{1,14}'
           },
           code: {
             type: 'string',
-            description: '6-digit verification code',
-            example: '123456'
+            description: `${CONFIG.VERIFICATION.CODE_LENGTH}-digit verification code`,
+            example: '123456',
+            pattern: `^\\d{${CONFIG.VERIFICATION.CODE_LENGTH}}$`
           }
         },
         required: ['phoneNumber', 'code']
@@ -107,8 +112,15 @@ export const swaggerDocument: OpenAPIV3.Document = {
                 example: 'Failed to send message'
               },
               details: {
-                type: 'string',
-                example: 'Invalid phone number format'
+                type: 'object',
+                properties: {
+                  moreInfo: {
+                    type: 'string'
+                  },
+                  status: {
+                    type: 'string'
+                  }
+                }
               }
             }
           }
@@ -162,6 +174,23 @@ export const swaggerDocument: OpenAPIV3.Document = {
                         status: {
                           type: 'string',
                           enum: ['queued', 'sent', 'delivered', 'failed']
+                        },
+                        details: {
+                          type: 'object',
+                          properties: {
+                            from: {
+                              type: 'string',
+                              description: 'Sender phone number'
+                            },
+                            to: {
+                              type: 'string',
+                              description: 'Recipient phone number'
+                            },
+                            direction: {
+                              type: 'string',
+                              description: 'Message direction'
+                            }
+                          }
                         }
                       }
                     }
@@ -220,7 +249,7 @@ export const swaggerDocument: OpenAPIV3.Document = {
     '/api/verify/send': {
       post: {
         summary: 'Send verification code',
-        description: 'Send a 6-digit verification code to the specified phone number via WhatsApp',
+        description: `Send a ${CONFIG.VERIFICATION.CODE_LENGTH}-digit verification code to the specified phone number via WhatsApp. Rate limited to 1 request per ${CONFIG.VERIFICATION.COOLDOWN_MINUTES} minutes.`,
         requestBody: {
           required: true,
           content: {
@@ -282,7 +311,16 @@ export const swaggerDocument: OpenAPIV3.Document = {
                         },
                         message: {
                           type: 'string',
-                          example: 'Please wait 15 minutes before requesting a new code'
+                          example: `Please wait ${CONFIG.VERIFICATION.COOLDOWN_MINUTES} minutes before requesting a new code`
+                        },
+                        details: {
+                          type: 'object',
+                          properties: {
+                            remainingTime: {
+                              type: 'number',
+                              description: 'Remaining cooldown time in minutes'
+                            }
+                          }
                         }
                       }
                     }
@@ -307,7 +345,7 @@ export const swaggerDocument: OpenAPIV3.Document = {
     '/api/verify/check': {
       post: {
         summary: 'Verify code',
-        description: 'Verify a 6-digit code sent to the specified phone number',
+        description: `Verify a ${CONFIG.VERIFICATION.CODE_LENGTH}-digit code sent to the specified phone number. Limited to ${CONFIG.VERIFICATION.MAX_ATTEMPTS} attempts per code.`,
         requestBody: {
           required: true,
           content: {
@@ -360,6 +398,15 @@ export const swaggerDocument: OpenAPIV3.Document = {
                         message: {
                           type: 'string',
                           example: 'Invalid code. 2 attempts remaining.'
+                        },
+                        details: {
+                          type: 'object',
+                          properties: {
+                            remainingAttempts: {
+                              type: 'number',
+                              description: 'Number of verification attempts remaining'
+                            }
+                          }
                         }
                       }
                     }
@@ -388,7 +435,7 @@ export const swaggerDocument: OpenAPIV3.Document = {
                         },
                         message: {
                           type: 'string',
-                          example: 'Max attempts (3) exceeded. Please request a new code.'
+                          example: `Max attempts (${CONFIG.VERIFICATION.MAX_ATTEMPTS}) exceeded. Please request a new code.`
                         }
                       }
                     }

@@ -125,6 +125,34 @@ function validatePhoneNumber(phone: string): { isValid: boolean; error?: string 
   return { isValid: true };
 }
 
+// Add more detailed logging for message sending
+async function logTwilioDetails() {
+  if (!twilioClient) return;
+
+  try {
+    const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+    if (!messagingServiceSid) {
+      console.error('Missing TWILIO_MESSAGING_SERVICE_SID');
+      return;
+    }
+
+    const service = await twilioClient.messaging.v1.services(messagingServiceSid).fetch();
+    const phoneNumbers = await twilioClient.messaging.v1
+      .services(messagingServiceSid)
+      .phoneNumbers
+      .list();
+
+    console.log('\n=== Twilio Configuration ===');
+    console.log('Account SID:', process.env.TWILIO_ACCOUNT_SID?.substring(0, 8) + '...');
+    console.log('Service SID:', messagingServiceSid.substring(0, 8) + '...');
+    console.log('Service Name:', service.friendlyName);
+    console.log('Phone Numbers:', phoneNumbers.map(p => p.phoneNumber).join(', '));
+    console.log('===========================\n');
+  } catch (error) {
+    console.error('Error logging Twilio details:', error);
+  }
+}
+
 export function registerRoutes(app: Express): Server {
   // Initialize authentication first
   setupAuth(app);
@@ -534,6 +562,9 @@ export function registerRoutes(app: Express): Server {
         throw new Error('Messaging Service SID not configured');
       }
 
+      // Log current Twilio configuration
+      await logTwilioDetails();
+
       // Format the destination number for WhatsApp
       const toNumber = formatWhatsAppNumber(contactNumber);
 
@@ -541,19 +572,29 @@ export function registerRoutes(app: Express): Server {
       console.log('To:', toNumber);
       console.log('Content:', content);
       console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
-      console.log('API Key:', req.headers['x-api-key'] ? 'Present' : 'Not Present');
 
       // Send message via Twilio Messaging Service
       const messagingOptions = {
         messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
         to: toNumber,
-        body: content
+        body: content,
+        // Ensure messages are sent through WhatsApp
+        contentType: 'text/plain',
+        contentSid: null,
+        contentVariables: null,
+        mediaUrl: null,
+        statusCallback: `${process.env.BASE_URL}/webhook`
       };
+
+      console.log('Message options:', JSON.stringify(messagingOptions, null, 2));
 
       const twilioMessage = await twilioClient.messages.create(messagingOptions);
 
       console.log('Message sent successfully:', twilioMessage.sid);
       console.log('Message status:', twilioMessage.status);
+      console.log('Message direction:', twilioMessage.direction);
+      console.log('Message from:', twilioMessage.from);
+      console.log('Message to:', twilioMessage.to);
       console.log('==========================\n');
 
       // Store message in database
@@ -586,7 +627,12 @@ export function registerRoutes(app: Express): Server {
         data: {
           message: message[0],
           twilioSid: twilioMessage.sid,
-          status: twilioMessage.status
+          status: twilioMessage.status,
+          details: {
+            from: twilioMessage.from,
+            to: twilioMessage.to,
+            direction: twilioMessage.direction
+          }
         }
       });
     } catch (error: any) {
@@ -595,7 +641,8 @@ export function registerRoutes(app: Express): Server {
         message: error.message,
         code: error.code,
         status: error.status,
-        moreInfo: error.moreInfo
+        moreInfo: error.moreInfo,
+        stack: error.stack
       });
       console.error("==========================\n");
 
@@ -605,7 +652,10 @@ export function registerRoutes(app: Express): Server {
         error: {
           code: error.code || 'MESSAGE_SEND_FAILED',
           message: error.message || 'Failed to send message',
-          details: error.moreInfo || undefined
+          details: {
+            moreInfo: error.moreInfo,
+            status: error.status
+          }
         }
       });
     }
@@ -1403,5 +1453,4 @@ export function registerRoutes(app: Express): Server {
   });
 
   return httpServer;
-
 }
