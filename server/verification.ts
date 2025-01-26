@@ -5,19 +5,10 @@ import { and, eq, gt } from "drizzle-orm";
 import twilio from "twilio";
 import { CONFIG } from "./config";
 
-// Initialize Twilio client with more detailed logging
+// Initialize Twilio client
 const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
   ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
   : null;
-
-if (twilioClient) {
-  console.log('Twilio client initialized successfully');
-} else {
-  console.error('Failed to initialize Twilio client:');
-  console.error('- TWILIO_ACCOUNT_SID exists:', !!process.env.TWILIO_ACCOUNT_SID);
-  console.error('- TWILIO_AUTH_TOKEN exists:', !!process.env.TWILIO_AUTH_TOKEN);
-  console.error('- TWILIO_MESSAGING_SERVICE_SID exists:', !!process.env.TWILIO_MESSAGING_SERVICE_SID);
-}
 
 export class VerificationService {
   private static CODE_LENGTH = CONFIG.VERIFICATION.CODE_LENGTH;
@@ -38,10 +29,6 @@ export class VerificationService {
       const cleanNumber = phoneNumber.replace(/\s+/g, '').replace(/[^\d+]/g, '');
       const formattedNumber = cleanNumber.startsWith('+') ? cleanNumber : `+${cleanNumber}`;
       console.log('Formatted phone number:', formattedNumber);
-
-      // Generate new code first
-      const code = this.generateCode();
-      console.log('Generated verification code:', code);
 
       // Check for existing active verification
       const now = new Date();
@@ -64,6 +51,10 @@ export class VerificationService {
         }
       }
 
+      // Generate new code
+      const code = this.generateCode();
+      console.log('Generated verification code:', code);
+
       const expiresAt = new Date();
       expiresAt.setMinutes(expiresAt.getMinutes() + this.CODE_EXPIRY_MINUTES);
 
@@ -80,8 +71,8 @@ export class VerificationService {
 
       // Send verification code via WhatsApp
       if (twilioClient && process.env.TWILIO_MESSAGING_SERVICE_SID) {
-        // Format number for WhatsApp
-        const toNumber = `whatsapp:${formattedNumber}`;  // Changed: Keep the + in the number
+        // Remove the + prefix for WhatsApp number format
+        const toNumber = `whatsapp:${formattedNumber.substring(1)}`;
         console.log('Sending WhatsApp message to:', toNumber);
         console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
 
@@ -90,20 +81,12 @@ export class VerificationService {
             messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
             to: toNumber,
             body: `Your RottieConnect verification code is: ${code}\n\nThis code will expire in ${this.CODE_EXPIRY_MINUTES} minutes.`
-            // Removed contentType parameter as it's not needed
           });
 
           console.log('Message sent successfully:', message.sid);
           console.log('Message status:', message.status);
-          console.log('Message direction:', message.direction);
-          console.log('Message from:', message.from);
-          console.log('Message to:', message.to);
-        } catch (error: any) {
+        } catch (error) {
           console.error('Error sending WhatsApp message:', error);
-          console.error('Error code:', error.code);
-          console.error('Error status:', error.status);
-          console.error('Error message:', error.message);
-          console.error('Error details:', error.moreInfo);
           throw new Error('Failed to send verification code via WhatsApp');
         }
       } else {
@@ -128,10 +111,6 @@ export class VerificationService {
     const formattedNumber = cleanNumber.startsWith('+') ? cleanNumber : `+${cleanNumber}`;
     const now = new Date();
 
-    console.log('\n=== Starting Code Verification ===');
-    console.log('Phone number:', formattedNumber);
-    console.log('Code:', code);
-
     // Find active verification codes for this number
     const verification = await db.query.verificationCodes.findFirst({
       where: and(
@@ -141,19 +120,11 @@ export class VerificationService {
     });
 
     if (!verification) {
-      console.log('No active verification found');
       throw new Error('No active verification code found. Please request a new code.');
     }
 
-    console.log('Found verification:', {
-      attempts: verification.attempts,
-      expiresAt: verification.expiresAt,
-      verified: verification.verified
-    });
-
     // Check if max attempts exceeded
     if (verification.attempts >= this.MAX_ATTEMPTS) {
-      console.log('Max attempts exceeded');
       throw new Error(`Max attempts (${this.MAX_ATTEMPTS}) exceeded. Please request a new code.`);
     }
 
@@ -163,14 +134,13 @@ export class VerificationService {
       const newAttempts = (verification.attempts || 0) + 1;
       await db
         .update(verificationCodes)
-        .set({
+        .set({ 
           attempts: newAttempts,
           lastAttemptAt: now
         })
         .where(eq(verificationCodes.id, verification.id));
 
       const remainingAttempts = this.MAX_ATTEMPTS - newAttempts;
-      console.log('Invalid code. Remaining attempts:', remainingAttempts);
       throw new Error(`Invalid code. ${remainingAttempts} attempts remaining.`);
     }
 
@@ -180,8 +150,6 @@ export class VerificationService {
       .set({ verified: true })
       .where(eq(verificationCodes.id, verification.id));
 
-    console.log('Code verified successfully');
-    console.log('=== Code Verification Completed ===\n');
     return true;
   }
 
