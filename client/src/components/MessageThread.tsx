@@ -51,6 +51,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [data?.messages]);
 
+  // The current message sending implementation
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -238,6 +239,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
         )}
       </div>
 
+      {/* The form component */}
       <form onSubmit={handleSubmit} className="p-4 border-t border-zinc-800 flex gap-2">
         <Input
           value={message}

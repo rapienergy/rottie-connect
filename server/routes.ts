@@ -530,7 +530,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Update the message sending endpoint with better WhatsApp handling
+  // The message sending endpoint implementation
   app.post("/api/messages", async (req, res) => {
     try {
       if (!twilioClient) {
@@ -562,9 +562,6 @@ export function registerRoutes(app: Express): Server {
         throw new Error('Messaging Service SID not configured');
       }
 
-      // Log current Twilio configuration
-      await logTwilioDetails();
-
       // Format the destination number for WhatsApp
       const toNumber = formatWhatsAppNumber(contactNumber);
 
@@ -578,11 +575,6 @@ export function registerRoutes(app: Express): Server {
         messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
         to: toNumber,
         body: content,
-        // Ensure messages are sent through WhatsApp
-        contentType: 'text/plain',
-        contentSid: null,
-        contentVariables: null,
-        mediaUrl: null,
         statusCallback: `${process.env.BASE_URL}/webhook`
       };
 
