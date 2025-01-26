@@ -662,7 +662,6 @@ export function registerRoutes(app: Express): Server {
   });
 
 
-
   // Get all conversations across channels
   app.get("/api/conversations", async (_req, res) => {
     try {
@@ -807,125 +806,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Get Messaging Service details
-  app.get("/api/twilio/status", async (_req, res) => {
-    try {
-      if (!twilioClient) {
-        throw new Error('Twilio client not initialized');
-      }
-
-      const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
-      if (!messagingServiceSid) {
-        throw new Error('Messaging Service SID not configured');
-      }
-
-      // Get Messaging Service details
-      const service = await twilioClient.messaging.v1.services(messagingServiceSid).fetch();
-
-      // Get phone numbers associated with the Messaging Service
-      const phoneNumbers = await twilioClient.messaging.v1
-        .services(messagingServiceSid)
-        .phoneNumbers
-        .list();
-
-      const primaryNumber = phoneNumbers.find(num => num.phoneNumber.endsWith('6311'));
-
-      res.json({
-        status: "connected",
-        friendlyName: service.friendlyName || 'Messaging Service',
-        whatsappNumber: primaryNumber?.phoneNumber || undefined,
-        inboundRequestUrl: service.inboundRequestUrl,
-        useInboundWebhookOnNumber: service.useInboundWebhookOnNumber,
-        channels: ['sms', 'whatsapp', 'voice']
-      });
-    } catch (error: any) {
-      console.error("Messaging Service connection error:", error);
-      res.status(500).json({
-        status: 'error',
-        message: error.message,
-        code: error.code || 'MESSAGING_SERVICE_ERROR'
-      });
-    }
-  });
-
-  // Test Messaging Service configuration
-  app.get("/api/twilio/test", async (_req, res) => {
-    try {
-      if (!twilioClient) {
-        throw new Error('Twilio client not initialized');
-      }
-
-      const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
-      if (!messagingServiceSid) {
-        throw new Error('Messaging Service SID not configured');
-      }
-
-      console.log('\n=== Testing Messaging Service Configuration ===');
-      console.log('Messaging Service SID:', messagingServiceSid);
-
-      // Get Messaging Service details
-      const service = await twilioClient.messaging.v1.services(messagingServiceSid).fetch();
-      console.log('Service details:', service.friendlyName);
-
-      // Get phone numbers associated with the Messaging Service
-      const phoneNumbers = await twilioClient.messaging.v1
-        .services(messagingServiceSid)
-        .phoneNumbers
-        .list();
-
-      console.log('Phone numbers:', phoneNumbers.length);
-      phoneNumbers.forEach(num => {
-        console.log('- Number:', num.phoneNumber);
-        console.log('  Capabilities:', num.capabilities);
-      });
-
-      const primaryNumber = phoneNumbers.find(num => num.phoneNumber.endsWith('6311'));
-
-      res.json({
-        status: 'success',
-        service: {
-          sid: service.sid,
-          friendlyName: service.friendlyName,
-          inboundRequestUrl: service.inboundRequestUrl,
-          useInboundWebhookOnNumber: service.useInboundWebhookOnNumber
-        },
-        message: 'Messaging Service configuration verified',
-        phoneNumbers: phoneNumbers.map(num => ({
-          sid: num.sid,
-          phoneNumber: num.phoneNumber,
-          capabilities: num.capabilities
-        }))
-      });
-    } catch (error: any) {
-      console.error("Messaging Service test failed:", error);
-      res.status(500).json({
-        status: 'error',
-        message: error.message,
-        code: error.code || 'TEST_FAILED'
-      });
-    }
-  });
-
-  // Test WhatsApp number formatting
-  app.get("/api/twilio/test-format", async (req, res) => {
-    const testNumbers = [
-      process.env.TWILIO_PHONE_NUMBER || '',  // Business number
-      '5215512345678',                       // With country code
-      '5512345678',                          // Without country code
-      'whatsapp:+5215512345678',            // Already formatted
-      '+5215512345678'                       // With plus
-    ];
-
-    const formatted = testNumbers.map(num => ({
-      original: num,
-      formatted: formatWhatsAppNumber(num)
-    }));
-
-    res.json({
-      businessNumber: process.env.TWILIO_PHONE_NUMBER,
-      testResults: formatted
-    });
-  });
+  //Removed redundant whatsapp-status endpoint
 
   // Send verification code
   app.post("/api/verify/send", async (req, res) => {
@@ -952,10 +833,12 @@ export function registerRoutes(app: Express): Server {
         const toNumber = formatWhatsAppNumber(phoneNumber);
 
         if (!twilioClient || !process.env.TWILIO_MESSAGING_SERVICE_SID) {
-          throw new Error('Twilio client or messaging service not configured');        }
+          throw new Error('Twilio client ormessaging service not configured');
+        }
 
         // Send code via WhatsApp
-        const message = await twilioClient.messages.create({          messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+        const message = await twilioClient.messages.create({
+          messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
           to: toNumber,
           body: `Your RottieConnect verification code is: ${code}\n\nThis code will expire in 5 minutes.`
         });
@@ -1106,7 +989,6 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Add this test endpoint after the /api/verify/check endpoint
   // Test verification code sending
   app.get("/api/verify/test", async (_req, res) => {
     try {
@@ -1506,6 +1388,253 @@ export function registerRoutes(app: Express): Server {
         error: {
           code: error.code || 'WHATSAPP_CONFIG_CHECK_FAILED',
           message: error.message
+        }
+      });
+    }
+  });
+
+  // Add WhatsApp sandbox verification endpoint
+  app.get("/api/whatsapp-sandbox", async (_req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      // Get account details
+      const account = await twilioClient.api.accounts(process.env.TWILIO_ACCOUNT_SID!).fetch();
+
+      // Get WhatsApp enabled numbers
+      const numbers = await twilioClient.incomingPhoneNumbers.list();
+      const whatsappEnabled = numbers.some(num =>
+        num.capabilities.some(cap =>
+          cap.toLowerCase().includes('whatsapp')
+        )
+      );
+
+      res.json({
+        success: true,
+        account: {
+          status: account.status,
+          type: account.type
+        },
+        whatsapp: {
+          enabled: whatsappEnabled,
+          sandbox: {
+            status: whatsappEnabled ? 'active' : 'inactive',
+            number: process.env.TWILIO_PHONE_NUMBER
+          }
+        }
+      });
+
+    } catch (error: any) {
+      console.error("WhatsApp sandbox check failed:", error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: error.code || 'WHATSAPP_SANDBOX_CHECK_FAILED',
+          message: error.message
+        }
+      });
+    }
+  });
+  // WhatsApp and messaging status endpoint with detailed logging
+  app.get("/api/messaging/status", async (_req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      console.log('\n=== Checking Messaging Service Status ===');
+
+      // Get account details
+      const account = await twilioClient.api.accounts(process.env.TWILIO_ACCOUNT_SID!).fetch();
+      console.log('Account Type:', account.type);
+
+      // Get SMS service details
+      const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+      if (!messagingServiceSid) {
+        throw new Error('Messaging Service SID not configured');
+      }
+
+      const service = await twilioClient.messaging.v1.services(messagingServiceSid).fetch();
+      const phoneNumbers = await twilioClient.messaging.v1
+        .services(messagingServiceSid)
+        .phoneNumbers
+        .list();
+
+      console.log('Service Details:', {
+        name: service.friendlyName,
+        inboundUrl: service.inboundRequestUrl,
+        phoneNumbers: phoneNumbers.length
+      });
+
+      // Get comprehensive number details
+      const numberDetails = await Promise.all(phoneNumbers.map(async (num) => {
+        const details = await twilioClient.incomingPhoneNumbers(num.sid).fetch();
+        return {
+          phoneNumber: details.phoneNumber,
+          capabilities: details.capabilities,
+          smsUrl: details.smsUrl,
+          voiceUrl: details.voiceUrl,
+          status: details.status,
+          friendlyName: details.friendlyName
+        };
+      }));
+
+      console.log('Number Details:', numberDetails);
+
+      res.json({
+        success: true,
+        account: {
+          sid: account.sid,
+          type: account.type,
+          status: account.status
+        },
+        messaging: {
+          service: {
+            sid: service.sid,
+            name: service.friendlyName,
+            inboundUrl: service.inboundRequestUrl,
+            useInboundWebhookOnNumber: service.useInboundWebhookOnNumber
+          },
+          numbers: numberDetails
+        }
+      });
+
+      console.log('=== Status Check Complete ===\n');
+
+    } catch (error: any) {
+      console.error("Error checking messaging status:", error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: error.code || 'STATUS_CHECK_FAILED',
+          message: error.message || 'Failed to check messaging status',
+          details: {
+            moreInfo: error.moreInfo,
+            status: error.status
+          }
+        }
+      });
+    }
+  });
+
+  // Test message sending with comprehensive error handling and logging
+  app.post("/api/messages/test", async (req, res) => {
+    try {
+      const { phoneNumber } = req.body;
+
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      if (!phoneNumber) {
+        throw new Error('Phone number is required');
+      }
+
+      console.log('\n=== Testing Message Service ===');
+      console.log('To:', phoneNumber);
+
+      // Validate phone number
+      const validation = validatePhoneNumber(phoneNumber);
+      if (!validation.isValid) {
+        throw new Error(validation.error);
+      }
+
+      const toNumber = formatWhatsAppNumber(phoneNumber);
+      console.log('Formatted number:', toNumber);
+
+      // Ensure required environment variables
+      if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
+        throw new Error('TWILIO_MESSAGING_SERVICE_SID is required');
+      }
+
+      // Send test message with full options
+      const message = await twilioClient.messages.create({
+        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+        to: toNumber,
+        body: 'Test message from RottieConnect',
+        statusCallback: `${process.env.BASE_URL}/webhook`,
+        attempt: 3,
+        maxPrice: 0.05,
+        validityPeriod: 3600
+      });
+
+      console.log('Message Details:', {
+        sid: message.sid,
+        status: message.status,
+        direction: message.direction,
+        from: message.from,
+        to: message.to,
+        price: message.price,
+        errorCode: message.errorCode,
+        errorMessage: message.errorMessage
+      });
+
+      // Store message in database
+      const dbMessage = await db
+        .insert(messages)
+        .values({
+          contactNumber: phoneNumber.replace('whatsapp:', ''),
+          content: 'Test message from RottieConnect',
+          direction: "rottie",
+          status: message.status,
+          twilioSid: message.sid,
+          metadata: {
+            channel: 'whatsapp',
+            price: message.price,
+            priceUnit: message.priceUnit,
+            numSegments: message.numSegments,
+            numMedia: message.numMedia,
+            apiVersion: message.apiVersion
+          },
+        })
+        .returning();
+
+      // Broadcast to connected clients
+      broadcast({
+        type: "message_created",
+        message: {
+          ...dbMessage[0],
+          createdAt: new Date().toISOString()
+        }
+      });
+
+      res.json({
+        success: true,
+        message: {
+          sid: message.sid,
+          status: message.status,
+          direction: message.direction,
+          details: {
+            from: message.from,
+            to: message.to,
+            price: message.price,
+            segments: message.numSegments
+          }
+        }
+      });
+
+      console.log('=== Test Complete ===\n');
+
+    } catch (error: any) {
+      console.error("Error sending test message:", error);
+      console.error("Error details:", {
+        code: error.code,
+        status: error.status,
+        moreInfo: error.moreInfo,
+        stack: error.stack
+      });
+
+      res.status(500).json({
+        success: false,
+        error: {
+          code: error.code || 'TEST_MESSAGE_FAILED',
+          message: error.message || 'Failed to send test message',
+          details: {
+            moreInfo: error.moreInfo,
+            status: error.status
+          }
         }
       });
     }
