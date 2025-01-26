@@ -1738,5 +1738,67 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Add test message sequence endpoint 
+  app.post("/api/test-sequence", async (_req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      const testNumber = "+5215584277211"; // Test phone number
+      const results = [];
+      const attempts = 3; // Number of attempts
+
+      console.log('\n=== Starting Test Message Sequence ===');
+      console.log(`Will attempt ${attempts} messages to ${testNumber}`);
+
+      for (let i = 0; i < attempts; i++) {
+        try {
+          console.log(`\nAttempt ${i + 1} of ${attempts}`);
+          const success = await VerificationService.sendTestMessage(testNumber);
+          results.push({
+            attempt: i + 1,
+            success,
+            timestamp: new Date().toISOString()
+          });
+
+          // Wait 2 seconds between attempts
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } catch (error: any) {
+          console.error(`Failed attempt ${i + 1}:`, error.message);
+          results.push({
+            attempt: i + 1,
+            success: false,
+            error: error.message,
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
+
+      console.log('\nTest sequence completed');
+      console.log('Results:', JSON.stringify(results, null, 2));
+      console.log('=== Test Sequence Complete ===\n');
+
+      res.json({
+        success: true,
+        data: {
+          totalAttempts: attempts,
+          successfulAttempts: results.filter(r => r.success).length,
+          results
+        }
+      });
+    } catch (error: any) {
+      console.error('Test sequence failed:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: error.code || 'TEST_SEQUENCE_FAILED',
+          message: error.message,
+          details: error.details || {}
+        }
+      });
+    }
+  });
+
   return httpServer;
 }
