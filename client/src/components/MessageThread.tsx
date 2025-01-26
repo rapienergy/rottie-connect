@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useSendMessage } from "@/lib/api";
+import { useState, useEffect, useRef } from "react";
+import { useMessages, useSendMessage, type Message } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send } from "lucide-react";
@@ -10,8 +10,15 @@ interface MessageThreadProps {
 }
 
 export function MessageThread({ contactNumber }: MessageThreadProps) {
+  const { data, isLoading } = useMessages(contactNumber);
   const sendMessage = useSendMessage();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const [message, setMessage] = useState("");
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [data]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,10 +64,27 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-6 font-mono">
-        <div className="text-center text-zinc-400">
-          <p>Ready to send messages</p>
-          <p className="text-sm mt-2">Type your message below to start the conversation</p>
-        </div>
+        {isLoading ? (
+          <div className="text-center text-zinc-400">Loading messages...</div>
+        ) : !data || data.length === 0 ? (
+          <div className="text-center text-zinc-400">
+            <p>Ready to send messages</p>
+            <p className="text-sm mt-2">Type your message below to start the conversation</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {data.map((msg: Message) => (
+              <div
+                key={msg.id}
+                className="text-sm whitespace-pre-wrap"
+                style={{ color: msg.direction === 'rottie' ? '#60A5FA' : '#34D399' }}
+              >
+                {`${new Date(msg.createdAt).toLocaleTimeString()} [${msg.direction}] ${msg.content} :: ${msg.status}`}
+              </div>
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="p-4 border-t border-zinc-800 flex gap-2">
