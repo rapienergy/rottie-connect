@@ -967,7 +967,7 @@ export function registerRoutes(app: Express): Server {
       const message = await twilioClient.messages.create({
         messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
         to: toNumber,
-        body: ``Your RottieConnect test verification code is: ${testCode}\n\nThis is a test message.`
+        body: `Your RottieConnect test verification code is: ${testCode}\n\nThis is a test message.`
       });
 
       console.log('Message sent successfully:', message.sid);
@@ -1097,7 +1097,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Add test WhatsApp message endpoint
+  // Add test message sending endpoint
   app.post("/api/messages/test", async (_req, res) => {
     try {
       if (!twilioClient) {
@@ -1632,6 +1632,107 @@ export function registerRoutes(app: Express): Server {
           code: error.code || 'TEST_MESSAGE_FAILED',
           message: error.message || 'Failed to send test message',
           details: error.details || {}
+        }
+      });
+    }
+  });
+
+  // Add test message endpoint with proper template
+  app.post("/api/test-whatsapp", async (_req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      // First verify configuration
+      console.log('\n=== Verifying Twilio Configuration ===');
+      console.log('Account SID exists:', !!process.env.TWILIO_ACCOUNT_SID);
+      console.log('Auth Token exists:', !!process.env.TWILIO_AUTH_TOKEN);
+      console.log('Phone Number:', process.env.TWILIO_PHONE_NUMBER);
+
+      if (!process.env.TWILIO_PHONE_NUMBER) {
+        throw new Error('TWILIO_PHONE_NUMBER not configured');
+      }
+
+      const testNumber = "+5215584277211";
+      console.log('\n=== Sending Test WhatsApp Message ===');
+      console.log('To:', testNumber);
+
+      // Format numbers for WhatsApp
+      const fromNumber = `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`;
+      const toNumber = `whatsapp:${testNumber}`;
+
+      console.log('From:', fromNumber);
+      console.log('To:', toNumber);
+
+      // Use template message for first contact
+      const message = await twilioClient.messages.create({
+        from: fromNumber,
+        to: toNumber,
+        body: 'Your RottieConnect verification code is {{1}}. This code will expire in {{2}} minutes.',
+        contentSid: null,  // If you have a content template SID, use it here
+        contentVariables: JSON.stringify({
+          1: '123456',  // Test verification code
+          2: '5'        // Test expiry time
+        })
+      });
+
+      console.log('Message sent successfully');
+      console.log('Message SID:', message.sid);
+      console.log('Status:', message.status);
+      console.log('Error Code:', message.errorCode);
+      console.log('Error Message:', message.errorMessage);
+      console.log('=== Test Message Complete ===\n');
+
+      // Store in database for tracking
+      const dbMessage = await db
+        .insert(messages)
+        .values({
+          contactNumber: testNumber,
+          content: 'Test verification template message',
+          direction: 'outbound',
+          status: message.status,
+          twilioSid: message.sid,
+          metadata: {
+            channel: 'whatsapp',
+            isTest: true,
+            errorCode: message.errorCode,
+            errorMessage: message.errorMessage
+          }
+        })
+        .returning();
+
+      res.json({
+        success: true,
+        data: {
+          message: dbMessage[0],
+          twilioSid: message.sid,
+          status: message.status,
+          details: {
+            errorCode: message.errorCode,
+            errorMessage: message.errorMessage
+          }
+        }
+      });
+    } catch (error: any) {
+      console.error('\n=== WhatsApp Test Error ===');
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        status: error.status,
+        moreInfo: error.moreInfo
+      });
+      console.error('========================\n');
+
+      res.status(error.status || 500).json({
+        success: false,
+        error: {
+          code: error.code || 'TEST_MESSAGE_FAILED',
+          message: error.message || 'Failed to send test message',
+          details: {
+            moreInfo: error.moreInfo,
+            status: error.status
+          }
         }
       });
     }
