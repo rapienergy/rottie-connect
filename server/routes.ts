@@ -1452,5 +1452,44 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Add before the end of registerRoutes function, before return httpServer
+
+  // Test sending a basic WhatsApp message
+  app.post("/api/twilio/test-message", async (req, res) => {
+    try {
+      const { phoneNumber } = req.body;
+
+      if (!phoneNumber) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'MISSING_PHONE',
+            message: 'Phone number is required'
+          }
+        });
+      }
+
+      await VerificationService.sendTestMessage(phoneNumber);
+
+      res.json({
+        success: true,
+        message: 'Test message sent successfully'
+      });
+    } catch (error: any) {
+      console.error("Error sending test message:", error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: error.code || 'TEST_MESSAGE_FAILED',
+          message: error.message || 'Failed to send test message',
+          details: {
+            moreInfo: error.moreInfo,
+            status: error.status
+          }
+        }
+      });
+    }
+  });
+
   return httpServer;
 }
