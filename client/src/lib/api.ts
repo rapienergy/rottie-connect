@@ -1,3 +1,13 @@
+import { useMutation } from "@tanstack/react-query";
+import { queryClient } from "./queryClient";
+import { toast } from "@/hooks/use-toast";
+
+interface SendMessageParams {
+  contactNumber: string;
+  content: string;
+  channel?: 'whatsapp' | 'sms' | 'voice';
+}
+
 export function useSendMessage() {
   return useMutation({
     mutationFn: async (params: SendMessageParams) => {
@@ -9,13 +19,13 @@ export function useSendMessage() {
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
-    onSuccess: (_, variables) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: [`/api/conversations/${variables.contactNumber}/messages`],
+        queryKey: ["/api/conversations"],
       });
       toast({ title: "Message sent successfully" });
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast({
         title: "Failed to send message",
         description: error.message,
