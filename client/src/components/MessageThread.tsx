@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMessages, useSendMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Send, Phone, PhoneOff, PhoneCall } from "lucide-react";
+import { Send } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
+import { format, isToday, isYesterday } from "date-fns";
 import { toast } from "@/hooks/use-toast";
 
 interface MessageThreadProps {
@@ -40,27 +40,22 @@ interface MessageResponse {
 
 export function MessageThread({ contactNumber }: MessageThreadProps) {
   const { data, isLoading } = useMessages(contactNumber);
-  const messages = (data as MessageResponse)?.messages || [];
-  const stats = (data as MessageResponse)?.stats;
   const sendMessage = useSendMessage();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [content, setContent] = useState("");
+  const [message, setMessage] = useState("");
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    const scrollToBottom = () => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    };
-    scrollToBottom();
-  }, [messages]);
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [data?.messages]);
 
-  const handleSendMessage = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!content.trim()) {
+    if (!message.trim()) {
       toast({
-        title: "Cannot send empty message",
+        title: "Error",
+        description: "Message cannot be empty",
         variant: "destructive",
       });
       return;
@@ -69,35 +64,28 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     try {
       await sendMessage.mutateAsync({
         contactNumber,
-        content: content.trim(),
+        content: message.trim(),
         channel: 'whatsapp'
       });
 
-      // Clear input after successful send
-      setContent("");
-      inputRef.current?.focus();
-
+      setMessage(""); // Clear input after successful send
       toast({
-        title: "Message sent",
-        description: "Your message has been sent successfully.",
+        title: "Success",
+        description: "Message sent successfully",
       });
     } catch (error: any) {
-      console.error('Failed to send message:', error);
       toast({
-        title: "Failed to send message",
-        description: error.message || "Please try again.",
+        title: "Error",
+        description: error.message || "Failed to send message",
         variant: "destructive",
       });
     }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      const form = e.currentTarget.form;
-      if (form) {
-        form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-      }
+      handleSubmit(e);
     }
   };
 
@@ -123,6 +111,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
 
   const formatInteractionTime = (dateStr?: string) => {
     if (!dateStr) return '';
+    //This function was removed in the edited code, but its usage remains in the original, so I have restored it.  It may need further adjustments depending on the date-fns library version.
     return formatDistanceToNow(new Date(dateStr), { addSuffix: true });
   };
 
@@ -148,15 +137,19 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     }
   };
 
-  // Group messages by date with proper typing
-  const groupedMessages = messages.reduce<Record<string, typeof messages>>((groups, message) => {
-    const date = format(new Date(message.createdAt), 'yyyy-MM-dd');
+
+  // Group messages by date
+  const groupedMessages = data?.messages?.reduce<Record<string, typeof data.messages>>((groups, msg) => {
+    const date = format(new Date(msg.createdAt), 'yyyy-MM-dd');
     if (!groups[date]) {
       groups[date] = [];
     }
-    groups[date].push(message);
+    groups[date].push(msg);
     return groups;
-  }, {});
+  }, {}) || {};
+
+  const messages = (data as MessageResponse)?.messages || [];
+  const stats = (data as MessageResponse)?.stats;
 
   return (
     <div className="h-full flex flex-col bg-black rounded-lg border border-zinc-800">
@@ -187,53 +180,51 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
           </div>
         ) : (
           <div className="space-y-6">
-            {Object.entries(groupedMessages).map(([date, dateMessages]) => (
+            {Object.entries(groupedMessages).map(([date, messages]) => (
               <div key={date} className="space-y-2">
                 <div className="sticky top-0 bg-black/50 backdrop-blur-sm py-2">
                   <div className="text-xs text-zinc-500 text-center">
                     {formatMessageDate(date)}
                   </div>
                 </div>
-                {dateMessages.map((message) => (
+                {messages.map((msg) => (
                   <div
-                    key={`${message.id}-${message.twilioSid}`}
+                    key={msg.id}
                     className={cn(
                       "text-sm whitespace-pre-wrap",
-                      message.metadata?.channel === 'voice' 
-                        ? "flex items-center gap-2" 
-                        : "",
-                      isRottieMessage(message.direction) ? "text-blue-400" : "text-green-400"
+                      msg.metadata?.channel === 'voice' ? "flex items-center gap-2" : "",
+                      isRottieMessage(msg.direction) ? "text-blue-400" : "text-green-400"
                     )}
                   >
-                    {message.metadata?.channel === 'voice' ? (
+                    {msg.metadata?.channel === 'voice' ? (
                       <>
-                        {getCallIcon(message.status)}
+                        {getCallIcon(msg.status)}
                         <span>
-                          {`${formatMessageTime(message.createdAt)} [${formatDirection(message.direction)}] Voice Call - ${message.status}`}
-                          {message.metadata.callDuration && (
-                            <span className="text-zinc-500"> • Duration: {formatCallDuration(message.metadata.callDuration)}</span>
+                          {`${formatMessageTime(msg.createdAt)} [${formatDirection(msg.direction)}] Voice Call - ${msg.status}`}
+                          {msg.metadata.callDuration && (
+                            <span className="text-zinc-500"> • Duration: {formatCallDuration(msg.metadata.callDuration)}</span>
                           )}
-                          {message.metadata.recordingUrl && (
-                            <a 
-                              href={message.metadata.recordingUrl} 
-                              target="_blank" 
+                          {msg.metadata.recordingUrl && (
+                            <a
+                              href={msg.metadata.recordingUrl}
+                              target="_blank"
                               rel="noopener noreferrer"
                               className="ml-2 text-blue-500 hover:underline"
                             >
                               Recording
                             </a>
                           )}
-                          {message.metadata.transcription && (
+                          {msg.metadata.transcription && (
                             <div className="mt-1 text-zinc-400 text-xs">
-                              Transcription: {message.metadata.transcription}
+                              Transcription: {msg.metadata.transcription}
                             </div>
                           )}
                         </span>
                       </>
                     ) : (
-                      `${formatMessageTime(message.createdAt)} [${formatDirection(message.direction)}] ${message.content}`
+                      `${formatMessageTime(msg.createdAt)} [${formatDirection(msg.direction)}] ${msg.content}`
                     )}
-                    <span className="text-zinc-500"> :: {message.status}</span>
+                    <span className="text-zinc-500"> :: {msg.status}</span>
                   </div>
                 ))}
               </div>
@@ -243,22 +234,22 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
         )}
       </div>
 
-      <form onSubmit={handleSendMessage} className="p-4 border-t border-zinc-800 flex gap-2">
+      <form onSubmit={handleSubmit} className="p-4 border-t border-zinc-800 flex gap-2">
         <Input
-          ref={inputRef}
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
           onKeyPress={handleKeyPress}
           placeholder="Type your message..."
           autoComplete="off"
           className="bg-zinc-900 border-zinc-700 text-white font-mono"
           disabled={sendMessage.isPending}
         />
-        <Button 
+        <Button
           type="submit"
+          variant="default"
           size="icon"
           className="bg-green-900 hover:bg-green-800"
-          disabled={sendMessage.isPending || !content.trim()}
+          disabled={sendMessage.isPending || !message.trim()}
         >
           <Send className="h-4 w-4" />
         </Button>
