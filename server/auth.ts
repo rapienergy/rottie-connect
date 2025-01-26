@@ -54,10 +54,12 @@ export async function createInitialUser() {
       where: eq(users.username, 'ROTTIE'),
     });
 
+    const DEFAULT_PASSWORD = 'R11r11r';
+
     if (!existingUser) {
       console.log('Creating ROTTIE user...');
       // Create ROTTIE user with specified password
-      const hashedPassword = await crypto.hash('R11r11r');
+      const hashedPassword = await crypto.hash(DEFAULT_PASSWORD);
       await db.insert(users).values({
         username: 'ROTTIE',
         password: hashedPassword,
@@ -65,8 +67,8 @@ export async function createInitialUser() {
       console.log('Created initial ROTTIE user successfully');
     } else {
       console.log('ROTTIE user already exists');
-      // Update password if needed
-      const hashedPassword = await crypto.hash('R11r11r');
+      // Update password to ensure it's correct
+      const hashedPassword = await crypto.hash(DEFAULT_PASSWORD);
       await db.update(users)
         .set({ password: hashedPassword })
         .where(eq(users.username, 'ROTTIE'));
@@ -74,7 +76,7 @@ export async function createInitialUser() {
     }
   } catch (error) {
     console.error('Error managing initial user:', error);
-    throw error; // Rethrow to handle it in the setup
+    throw error;
   }
 }
 
@@ -109,6 +111,8 @@ export function setupAuth(app: Express) {
     new LocalStrategy(async (username, password, done) => {
       try {
         console.log('Attempting login for username:', username);
+        console.log('Attempting with password length:', password.length);
+
         const user = await db.query.users.findFirst({
           where: eq(users.username, username),
         });
@@ -118,7 +122,9 @@ export function setupAuth(app: Express) {
           return done(null, false, { message: "Invalid credentials" });
         }
 
+        console.log('Found user, comparing passwords...');
         const isMatch = await crypto.compare(password, user.password);
+
         if (!isMatch) {
           console.log('Password mismatch for user:', username);
           return done(null, false, { message: "Invalid credentials" });
@@ -196,79 +202,6 @@ export function setupAuth(app: Express) {
         });
       }
     })(req, res, next);
-  });
-
-  // Verify WhatsApp code endpoint
-  app.post("/api/verify", async (req, res) => {
-    const { code } = req.body;
-    const pendingUser = req.session.pendingUser;
-
-    if (!pendingUser) {
-      return res.status(400).json({
-        success: false,
-        message: "No pending verification"
-      });
-    }
-
-    try {
-      console.log('Verifying code for pending user:', pendingUser);
-      const verified = await VerificationService.verifyCode(CONFIG.VERIFICATION.TEST_PHONE_NUMBER, code);
-      if (verified) {
-        // Complete login
-        const user = await db.query.users.findFirst({
-          where: eq(users.id, pendingUser.id),
-        });
-
-        if (!user) {
-          throw new Error("User not found");
-        }
-
-        req.login(user, (err) => {
-          if (err) {
-            console.error('Login error after verification:', err);
-            return res.status(500).json({
-              success: false,
-              message: "Error completing login"
-            });
-          }
-          // Clear pending user
-          delete req.session.pendingUser;
-          return res.json({
-            success: true,
-            user: {
-              id: user.id,
-              username: user.username
-            }
-          });
-        });
-      } else {
-        res.status(400).json({
-          success: false,
-          message: "Invalid verification code"
-        });
-      }
-    } catch (error: any) {
-      console.error('Verification error:', error);
-      return res.status(400).json({
-        success: false,
-        message: error.message
-      });
-    }
-  });
-
-  // Get current user
-  app.get("/api/user", (req, res) => {
-    if (req.isAuthenticated()) {
-      const user = req.user as User;
-      return res.json({
-        id: user.id,
-        username: user.username
-      });
-    }
-    res.status(401).json({
-      success: false,
-      message: "Not authenticated"
-    });
   });
 
   // Create initial ROTTIE user
