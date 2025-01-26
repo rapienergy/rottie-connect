@@ -49,15 +49,15 @@ const crypto = {
 export async function createInitialUser() {
   try {
     console.log('Checking for ROTTIE user...');
+    // Check if ROTTIE user exists
     const existingUser = await db.query.users.findFirst({
       where: eq(users.username, 'ROTTIE'),
     });
 
-    const DEFAULT_PASSWORD = 'R11r11r';
-
     if (!existingUser) {
       console.log('Creating ROTTIE user...');
-      const hashedPassword = await crypto.hash(DEFAULT_PASSWORD);
+      // Create ROTTIE user with specified password
+      const hashedPassword = await crypto.hash('R11r11r');
       await db.insert(users).values({
         username: 'ROTTIE',
         password: hashedPassword,
@@ -65,7 +65,8 @@ export async function createInitialUser() {
       console.log('Created initial ROTTIE user successfully');
     } else {
       console.log('ROTTIE user already exists');
-      const hashedPassword = await crypto.hash(DEFAULT_PASSWORD);
+      // Update password if needed
+      const hashedPassword = await crypto.hash('R11r11r');
       await db.update(users)
         .set({ password: hashedPassword })
         .where(eq(users.username, 'ROTTIE'));
@@ -73,19 +74,18 @@ export async function createInitialUser() {
     }
   } catch (error) {
     console.error('Error managing initial user:', error);
-    throw error;
+    throw error; // Rethrow to handle it in the setup
   }
 }
 
 export function setupAuth(app: Express) {
   const MemoryStore = createMemoryStore(session);
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.REPL_ID || 'secure-session-secret',
+    secret: process.env.REPL_ID || CONFIG.SESSION.COOKIE_NAME,
     resave: false,
     saveUninitialized: false,
     cookie: {
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      httpOnly: true
+      maxAge: CONFIG.SESSION.MAX_AGE
     },
     store: new MemoryStore({
       checkPeriod: 86400000, // prune expired entries every 24h
@@ -109,7 +109,6 @@ export function setupAuth(app: Express) {
     new LocalStrategy(async (username, password, done) => {
       try {
         console.log('Attempting login for username:', username);
-
         const user = await db.query.users.findFirst({
           where: eq(users.username, username),
         });
@@ -141,6 +140,7 @@ export function setupAuth(app: Express) {
 
   passport.deserializeUser(async (id: number, done) => {
     try {
+      console.log('Deserializing user:', id);
       const user = await db.query.users.findFirst({
         where: eq(users.id, id),
       });
@@ -151,11 +151,16 @@ export function setupAuth(app: Express) {
     }
   });
 
+  // Login endpoint with two-step verification
   app.post("/api/login", (req, res, next) => {
+    console.log('Login attempt:', req.body);
     passport.authenticate("local", async (err: any, user: User | false, info: IVerifyOptions) => {
       if (err) {
         console.error('Authentication error:', err);
-        return res.status(500).json({ success: false, message: "Internal server error" });
+        return res.status(500).json({
+          success: false,
+          message: "Internal server error"
+        });
       }
 
       if (!user) {
@@ -165,27 +170,93 @@ export function setupAuth(app: Express) {
         });
       }
 
-      // Log in the user immediately without verification for now
-      req.login(user, (err) => {
-        if (err) {
-          console.error('Login error:', err);
-          return res.status(500).json({
-            success: false,
-            message: "Error completing login"
-          });
-        }
+      try {
+        console.log('Creating verification for user:', user.username);
+        // Send verification code to WhatsApp
+        const verificationCode = await VerificationService.createVerification(CONFIG.VERIFICATION.TEST_PHONE_NUMBER);
+        console.log('Verification code created:', verificationCode);
+
+        // Store user data in session for verification step
+        req.session.pendingUser = {
+          id: user.id,
+          username: user.username
+        };
+        console.log('Stored pending user in session:', req.session.pendingUser);
 
         return res.json({
           success: true,
-          user: {
-            id: user.id,
-            username: user.username
-          }
+          message: "Verification code sent to WhatsApp",
+          requireVerification: true
         });
-      });
+      } catch (error: any) {
+        console.error('Verification error:', error);
+        return res.status(500).json({
+          success: false,
+          message: error.message || "Error sending verification code"
+        });
+      }
     })(req, res, next);
   });
 
+  // Verify WhatsApp code endpoint
+  app.post("/api/verify", async (req, res) => {
+    const { code } = req.body;
+    const pendingUser = req.session.pendingUser;
+
+    if (!pendingUser) {
+      return res.status(400).json({
+        success: false,
+        message: "No pending verification"
+      });
+    }
+
+    try {
+      console.log('Verifying code for pending user:', pendingUser);
+      const verified = await VerificationService.verifyCode(CONFIG.VERIFICATION.TEST_PHONE_NUMBER, code);
+      if (verified) {
+        // Complete login
+        const user = await db.query.users.findFirst({
+          where: eq(users.id, pendingUser.id),
+        });
+
+        if (!user) {
+          throw new Error("User not found");
+        }
+
+        req.login(user, (err) => {
+          if (err) {
+            console.error('Login error after verification:', err);
+            return res.status(500).json({
+              success: false,
+              message: "Error completing login"
+            });
+          }
+          // Clear pending user
+          delete req.session.pendingUser;
+          return res.json({
+            success: true,
+            user: {
+              id: user.id,
+              username: user.username
+            }
+          });
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          message: "Invalid verification code"
+        });
+      }
+    } catch (error: any) {
+      console.error('Verification error:', error);
+      return res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+  });
+
+  // Get current user
   app.get("/api/user", (req, res) => {
     if (req.isAuthenticated()) {
       const user = req.user as User;

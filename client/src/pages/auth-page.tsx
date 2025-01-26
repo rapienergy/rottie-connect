@@ -26,7 +26,6 @@ export default function AuthPage() {
   const [showVerification, setShowVerification] = useState(false);
   const [digits, setDigits] = useState(['', '', '', '', '', '']);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const [lastVerifyAttempt, setLastVerifyAttempt] = useState<string>('');
 
   const loginForm = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -48,20 +47,10 @@ export default function AuthPage() {
     if (showVerification) {
       verificationForm.reset();
       setDigits(['', '', '', '', '', '']);
-      setLastVerifyAttempt('');
     } else {
       loginForm.reset();
     }
   }, [showVerification]);
-
-  // Auto-verify when all digits are entered
-  useEffect(() => {
-    const code = digits.join('');
-    if (code.length === 6 && code !== lastVerifyAttempt) {
-      verificationForm.setValue('code', code);
-      handleVerification(code);
-    }
-  }, [digits]);
 
   async function onSubmitLogin(data: LoginForm) {
     setIsLoading(true);
@@ -75,22 +64,13 @@ export default function AuthPage() {
     }
   }
 
-  async function handleVerification(code: string) {
-    if (isLoading || code === lastVerifyAttempt) return;
-
+  async function onSubmitVerification(data: VerificationForm) {
     setIsLoading(true);
-    setLastVerifyAttempt(code);
     try {
-      await verify(code);
-    } catch (error) {
-      console.error('Verification failed:', error);
+      await verify(data.code);
     } finally {
       setIsLoading(false);
     }
-  }
-
-  async function onSubmitVerification(data: VerificationForm) {
-    handleVerification(data.code);
   }
 
   const handleDigitChange = (index: number, value: string) => {
@@ -99,6 +79,9 @@ export default function AuthPage() {
     const newDigits = [...digits];
     newDigits[index] = value;
     setDigits(newDigits);
+
+    // Update the form value
+    verificationForm.setValue('code', newDigits.join(''));
 
     // Auto-focus next input
     if (value && index < 5) {

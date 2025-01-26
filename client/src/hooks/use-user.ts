@@ -84,9 +84,7 @@ export function useUser() {
   const { data: user, error, isLoading } = useQuery<User | null, Error>({
     queryKey: ['user'],
     queryFn: fetchUser,
-    staleTime: 300000, // 5 minutes
-    refetchInterval: false, // Disable automatic refetching
-    refetchOnWindowFocus: false, // Disable refetch on window focus
+    staleTime: Infinity,
     retry: false
   });
 
