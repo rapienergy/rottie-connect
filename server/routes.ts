@@ -654,7 +654,6 @@ export function registerRoutes(app: Express): Server {
   });
 
 
-
   // Get all conversations across channels
   app.get("/api/conversations", async (_req, res) => {
     try {
@@ -664,7 +663,7 @@ export function registerRoutes(app: Express): Server {
       console.log('Fetching messages from Twilio...');
 
       const twilioMessages = await twilioClient.messages.list({
-        limit: 50
+        limit: 5000 // Increased limit to get more historical messages
       });
 
       console.log(`Found ${twilioMessages.length} messages`);
