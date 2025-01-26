@@ -49,7 +49,6 @@ const crypto = {
 export async function createInitialUser() {
   try {
     console.log('Checking for ROTTIE user...');
-    // Check if ROTTIE user exists
     const existingUser = await db.query.users.findFirst({
       where: eq(users.username, 'ROTTIE'),
     });
@@ -58,7 +57,6 @@ export async function createInitialUser() {
 
     if (!existingUser) {
       console.log('Creating ROTTIE user...');
-      // Create ROTTIE user with specified password
       const hashedPassword = await crypto.hash(DEFAULT_PASSWORD);
       await db.insert(users).values({
         username: 'ROTTIE',
@@ -67,7 +65,6 @@ export async function createInitialUser() {
       console.log('Created initial ROTTIE user successfully');
     } else {
       console.log('ROTTIE user already exists');
-      // Update password to ensure it's correct
       const hashedPassword = await crypto.hash(DEFAULT_PASSWORD);
       await db.update(users)
         .set({ password: hashedPassword })
@@ -83,11 +80,12 @@ export async function createInitialUser() {
 export function setupAuth(app: Express) {
   const MemoryStore = createMemoryStore(session);
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.REPL_ID || CONFIG.SESSION.COOKIE_NAME,
+    secret: process.env.REPL_ID || 'secure-session-secret',
     resave: false,
     saveUninitialized: false,
     cookie: {
-      maxAge: CONFIG.SESSION.MAX_AGE
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      httpOnly: true
     },
     store: new MemoryStore({
       checkPeriod: 86400000, // prune expired entries every 24h
@@ -111,7 +109,6 @@ export function setupAuth(app: Express) {
     new LocalStrategy(async (username, password, done) => {
       try {
         console.log('Attempting login for username:', username);
-        console.log('Attempting with password length:', password.length);
 
         const user = await db.query.users.findFirst({
           where: eq(users.username, username),
@@ -122,9 +119,7 @@ export function setupAuth(app: Express) {
           return done(null, false, { message: "Invalid credentials" });
         }
 
-        console.log('Found user, comparing passwords...');
         const isMatch = await crypto.compare(password, user.password);
-
         if (!isMatch) {
           console.log('Password mismatch for user:', username);
           return done(null, false, { message: "Invalid credentials" });
@@ -146,7 +141,6 @@ export function setupAuth(app: Express) {
 
   passport.deserializeUser(async (id: number, done) => {
     try {
-      console.log('Deserializing user:', id);
       const user = await db.query.users.findFirst({
         where: eq(users.id, id),
       });
@@ -157,16 +151,11 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // Login endpoint with two-step verification
   app.post("/api/login", (req, res, next) => {
-    console.log('Login attempt:', req.body);
     passport.authenticate("local", async (err: any, user: User | false, info: IVerifyOptions) => {
       if (err) {
         console.error('Authentication error:', err);
-        return res.status(500).json({
-          success: false,
-          message: "Internal server error"
-        });
+        return res.status(500).json({ success: false, message: "Internal server error" });
       }
 
       if (!user) {
@@ -176,32 +165,39 @@ export function setupAuth(app: Express) {
         });
       }
 
-      try {
-        console.log('Creating verification for user:', user.username);
-        // Send verification code to WhatsApp
-        const verificationCode = await VerificationService.createVerification(CONFIG.VERIFICATION.TEST_PHONE_NUMBER);
-        console.log('Verification code created:', verificationCode);
-
-        // Store user data in session for verification step
-        req.session.pendingUser = {
-          id: user.id,
-          username: user.username
-        };
-        console.log('Stored pending user in session:', req.session.pendingUser);
+      // Log in the user immediately without verification for now
+      req.login(user, (err) => {
+        if (err) {
+          console.error('Login error:', err);
+          return res.status(500).json({
+            success: false,
+            message: "Error completing login"
+          });
+        }
 
         return res.json({
           success: true,
-          message: "Verification code sent to WhatsApp",
-          requireVerification: true
+          user: {
+            id: user.id,
+            username: user.username
+          }
         });
-      } catch (error: any) {
-        console.error('Verification error:', error);
-        return res.status(500).json({
-          success: false,
-          message: error.message || "Error sending verification code"
-        });
-      }
+      });
     })(req, res, next);
+  });
+
+  app.get("/api/user", (req, res) => {
+    if (req.isAuthenticated()) {
+      const user = req.user as User;
+      return res.json({
+        id: user.id,
+        username: user.username
+      });
+    }
+    res.status(401).json({
+      success: false,
+      message: "Not authenticated"
+    });
   });
 
   // Create initial ROTTIE user
