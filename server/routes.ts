@@ -26,40 +26,17 @@ try {
   console.error('Failed to initialize Twilio client:', error);
 }
 
-// Update formatWhatsAppNumber function for better number formatting
+// Update formatWhatsAppNumber function for pure WhatsApp text messaging
 function formatWhatsAppNumber(phone: string): string {
   // Remove all non-digit characters except plus sign
   const cleaned = phone.replace(/[^\d+]/g, '');
-
-  // If number already starts with "whatsapp:", return as is
-  if (phone.startsWith('whatsapp:')) {
-    return phone;
-  }
-
-  // Format Mexican WhatsApp business number (remove spaces)
-  if (process.env.TWILIO_PHONE_NUMBER) {
-    const fromNumber = process.env.TWILIO_PHONE_NUMBER.replace(/\s+/g, '');
-    if (phone === fromNumber) {
-      return `whatsapp:${fromNumber}`;
-    }
-  }
-
-  // Handle Mexican numbers with country code
-  if (cleaned.startsWith('52') && cleaned.length === 12) {
-    return `whatsapp:+${cleaned}`;
-  }
-
-  // Add Mexico country code for 10-digit numbers
-  if (cleaned.length === 10) {
-    return `whatsapp:+52${cleaned}`;
-  }
 
   // If already has plus and proper length, just add whatsapp: prefix
   if (cleaned.startsWith('+')) {
     return `whatsapp:${cleaned}`;
   }
 
-  // Default: add whatsapp:+52 if no country code
+  // Add +52 prefix for Mexican numbers if needed
   return `whatsapp:+52${cleaned}`;
 }
 
@@ -530,7 +507,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Update the message sending endpoint with simpler WhatsApp configuration
+  // Update the /api/messages POST endpoint
   app.post("/api/messages", async (req, res) => {
     try {
       if (!twilioClient) {
@@ -548,33 +525,23 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
-        throw new Error('Messaging Service SID not configured');
-      }
-
-      // Clean phone number format - ensure it has + prefix and proper format
+      // Format the recipient's WhatsApp number
       const cleanNumber = contactNumber.replace(/\s+/g, '').replace(/[^\d+]/g, '');
-      const formattedNumber = cleanNumber.startsWith('+') ? cleanNumber : `+${cleanNumber}`;
+      const toNumber = cleanNumber.startsWith('+') ? cleanNumber : `+${cleanNumber}`;
 
-      // Log everything about this request for debugging
-      console.log('\n=== Debugging WhatsApp Message Request ===');
-      console.log('Original number:', contactNumber);
-      console.log('Cleaned number:', cleanNumber);
-      console.log('Formatted number:', formattedNumber);
-      console.log('Message content:', content);
-      console.log('Service SID:', process.env.TWILIO_MESSAGING_SERVICE_SID);
+      console.log('\n=== Sending WhatsApp Message ===');
+      console.log('To:', `whatsapp:${toNumber}`);
+      console.log('Content:', content);
 
-      // Create message exactly like verification service
-      const messageData = {
-        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
-        to: `whatsapp:${formattedNumber}`,
+      const message = await twilioClient.messages.create({
+        from: 'whatsapp:+14155238886',  // Twilio's WhatsApp sandbox number
+        to: `whatsapp:${toNumber}`,
         body: content
-      };
-      console.log('Message request data:', JSON.stringify(messageData, null, 2));
+      });
 
-      const message = await twilioClient.messages.create(messageData);
-      console.log('Message response:', JSON.stringify(message, null, 2));
-      console.log('===================================\n');
+      console.log('Message sent successfully:', message.sid);
+      console.log('Message status:', message.status);
+      console.log('===========================\n');
 
       res.json({
         success: true,
@@ -584,13 +551,13 @@ export function registerRoutes(app: Express): Server {
         }
       });
     } catch (error: any) {
-      console.error('\n=== WhatsApp Message Error Details ===');
+      console.error('=== Message Error Details ===');
       console.error('Error:', error);
       console.error('Error code:', error.code);
       console.error('Error status:', error.status);
       console.error('Error message:', error.message);
       console.error('Error details:', error.moreInfo);
-      console.error('===================================\n');
+      console.error('===========================\n');
 
       res.status(error.status || 500).json({
         success: false,
@@ -605,6 +572,7 @@ export function registerRoutes(app: Express): Server {
       });
     }
   });
+
 
 
   // Get all conversations across channels
@@ -939,7 +907,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Verify code
-  app.post("/api/verify/check", async (req, res) => {
+  app.post("/api/verify/check", async(req, res) => {
     try {
       const { phoneNumber, code } = req.body;
 
@@ -955,8 +923,8 @@ export function registerRoutes(app: Express): Server {
         return res.status(400).json({
           success: false,
           error: {
-            code: 'INVALIDCODE_FORMAT',
-            message: 'Verification code must be 6digits'
+            code: 'INVALID_CODE_FORMAT',
+            message: 'Verification code must be 6 digits'
           }
         });
       }
@@ -986,7 +954,7 @@ export function registerRoutes(app: Express): Server {
               message: error.message
             }
           });
-        } else if (error.message.includes('No active verification')) {
+        } else if (error.message.includes(''No active verification')) {
           return res.status(404).json({
             success: false,
             error: {
