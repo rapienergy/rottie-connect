@@ -22,6 +22,7 @@ export class VerificationService {
   private static CODE_EXPIRY_MINUTES = CONFIG.VERIFICATION.CODE_EXPIRY_MINUTES;
   private static MAX_ATTEMPTS = CONFIG.VERIFICATION.MAX_ATTEMPTS;
   private static COOLDOWN_MINUTES = CONFIG.VERIFICATION.COOLDOWN_MINUTES;
+  private static TEMPLATE_NAME = "rottieconnect_verification"; // WhatsApp template name
 
   static generateCode(): string {
     return randomInt(100000, 999999).toString().padStart(6, '0');
@@ -76,18 +77,25 @@ export class VerificationService {
 
       console.log('Verification code stored in database');
 
-      // Send verification code via WhatsApp
+      // Send verification code via WhatsApp template
       if (twilioClient && process.env.TWILIO_MESSAGING_SERVICE_SID) {
-        // Remove the + prefix for WhatsApp number format
         const toNumber = `whatsapp:${formattedNumber}`;
-        console.log('Sending WhatsApp message to:', toNumber);
+        console.log('Sending WhatsApp template to:', toNumber);
         console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
 
         try {
+          // Send using WhatsApp template
           const message = await twilioClient.messages.create({
             messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
             to: toNumber,
-            body: `Your RottieConnect verification code is: ${code}\n\nThis code will expire in ${this.CODE_EXPIRY_MINUTES} minutes.`
+            from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
+            body: `Your RottieConnect verification code is ${code}. This code will expire in ${this.CODE_EXPIRY_MINUTES} minutes.`,
+            // Use template parameters
+            contentSid: this.TEMPLATE_NAME,
+            contentVariables: JSON.stringify({
+              1: code,
+              2: this.CODE_EXPIRY_MINUTES.toString()
+            })
           });
 
           console.log('Message sent successfully:', message.sid);
@@ -95,8 +103,13 @@ export class VerificationService {
           console.log('Message direction:', message.direction);
           console.log('Message from:', message.from);
           console.log('Message to:', message.to);
-        } catch (error) {
+        } catch (error: any) {
           console.error('Error sending WhatsApp message:', error);
+          console.error('Error code:', error.code);
+          console.error('Error message:', error.message);
+          if (error.code === 63016) {
+            throw new Error('Failed to send verification code: WhatsApp template messaging required. Please ensure the template is approved.');
+          }
           throw new Error('Failed to send verification code via WhatsApp');
         }
       } else {
