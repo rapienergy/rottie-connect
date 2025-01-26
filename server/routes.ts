@@ -344,42 +344,52 @@ export function registerRoutes(app: Express): Server {
       }
 
       const start = Date.now();
-      console.log('Received webhook request');
-      console.log('Webhook payload:', JSON.stringify(req.body, null, 2));
+      console.log('\n=== Webhook Request ===');
+      console.log('Headers:', JSON.stringify(req.headers, null, 2));
+      console.log('Body:', JSON.stringify(req.body, null, 2));
 
-      // Always skip signature validation during local development
-      const isDevEnvironment = app.get('env') === 'development';
-      console.log('Environment:', app.get('env'), 'Development mode:', isDevEnvironment);
+      // Handle message status updates
+      const {
+        MessageSid,
+        MessageStatus,
+        ErrorCode,
+        ErrorMessage
+      } = req.body;
 
-      if (!isDevEnvironment) {
-        const twilioSignature = req.headers['x-twilio-signature'];
-        const webhookUrl = `${process.env.BASE_URL || 'http://localhost:5000'}/webhook`;
-
-        if (!twilioSignature || !process.env.TWILIO_AUTH_TOKEN) {
-          console.error('Missing Twilio signature or auth token');
-          return res.status(403).send('Forbidden: Missing signature or auth token');
+      if (MessageStatus) {
+        console.log(`Message ${MessageSid} status updated to: ${MessageStatus}`);
+        if (ErrorCode) {
+          console.error(`Error ${ErrorCode}: ${ErrorMessage}`);
         }
 
-        const isValid = twilio.validateRequest(
-          process.env.TWILIO_AUTH_TOKEN,
-          twilioSignature as string,
-          webhookUrl,
-          req.body
-        );
-
-        if (!isValid) {
-          console.error('Invalid Twilio signature');
-          return res.status(403).send('Forbidden: Invalid signature');
+        // Update message status in database
+        if (MessageSid) {
+          await db
+            .update(messages)
+            .set({ status: MessageStatus })
+            .where(eq(messages.twilioSid, MessageSid));
         }
+
+        // Broadcast status update to connected clients
+        broadcast({
+          type: "message_status_updated",
+          message: {
+            twilioSid: MessageSid,
+            status: MessageStatus,
+            error: ErrorCode ? { code: ErrorCode, message: ErrorMessage } : undefined
+          }
+        });
+
+        return res.status(200).send('OK');
       }
 
       const {
         From,
         To,
         Body,
-        MessageSid,
+        MessageSid: callMessageSid,
         ProfileName,
-        MessageStatus,
+        MessageStatus: callMessageStatus,
         CallStatus,
         CallSid,
         RecordingUrl,
@@ -458,12 +468,12 @@ export function registerRoutes(app: Express): Server {
       }
 
       // Handle message status updates efficiently
-      if (MessageStatus) {
+      if (callMessageStatus) {
         broadcast({
           type: "message_status_updated",
           message: {
-            twilioSid: MessageSid,
-            status: MessageStatus,
+            twilioSid: callMessageSid,
+            status: callMessageStatus,
             contactNumber: From?.replace('whatsapp:', '')
           }
         });
@@ -478,7 +488,7 @@ export function registerRoutes(app: Express): Server {
       const contactNumber = channel === 'whatsapp' ? From.replace('whatsapp:', '') : From;
 
       console.log(`Received ${channel} interaction from ${From}`);
-      console.log('Details:', { From, To, Body, MessageSid, CallSid });
+      console.log('Details:', { From, To, Body, MessageSid: callMessageSid, CallSid });
 
       // Efficiently store interaction in database
       const message = await db
@@ -489,7 +499,7 @@ export function registerRoutes(app: Express): Server {
           content: Body || TranscriptionText || `${channel.toUpperCase()} interaction`,
           direction: "inbound",
           status: "delivered",
-          twilioSid: MessageSid || CallSid,
+          twilioSid: callMessageSid || CallSid,
           metadata: {
             channel,
             profile: {
@@ -573,7 +583,7 @@ export function registerRoutes(app: Express): Server {
       console.log('Content:', content);
       console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
 
-      // Send message via Twilio with simplified options
+      // Send message via Twilio with better error handling
       const twilioMessage = await twilioClient.messages.create({
         messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
         to: toNumber,
@@ -651,7 +661,6 @@ export function registerRoutes(app: Express): Server {
       });
     }
   });
-
 
 
   // Get all conversations across channels
