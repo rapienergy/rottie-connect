@@ -18,7 +18,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [data]);
+  }, [data?.messages]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,20 +60,24 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     <div className="h-full flex flex-col bg-black rounded-lg border border-zinc-800">
       <div className="p-4 border-b border-zinc-800">
         <h2 className="font-mono text-white">{contactNumber}</h2>
-        <p className="font-mono text-sm text-zinc-400">WhatsApp Business</p>
+        {data?.stats && (
+          <p className="font-mono text-sm text-zinc-400">
+            WhatsApp Business • {data.stats.total} messages ({data.stats.sent} sent, {data.stats.received} received)
+          </p>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-6 font-mono">
         {isLoading ? (
           <div className="text-center text-zinc-400">Loading messages...</div>
-        ) : !data || data.length === 0 ? (
+        ) : !data?.messages || data.messages.length === 0 ? (
           <div className="text-center text-zinc-400">
             <p>Ready to send messages</p>
             <p className="text-sm mt-2">Type your message below to start the conversation</p>
           </div>
         ) : (
           <div className="space-y-2">
-            {data.map((msg: Message) => (
+            {data.messages.map((msg: Message) => (
               <div
                 key={msg.id}
                 className="text-sm whitespace-pre-wrap"

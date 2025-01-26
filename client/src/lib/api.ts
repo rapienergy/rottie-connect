@@ -19,6 +19,17 @@ export interface Message {
   };
 }
 
+export interface MessageResponse {
+  messages: Message[];
+  stats: {
+    total: number;
+    sent: number;
+    received: number;
+    firstInteraction?: string;
+    lastInteraction?: string;
+  };
+}
+
 export interface Conversation {
   contactNumber: string;
   contactName?: string;
@@ -44,7 +55,7 @@ export function useConversations() {
 }
 
 export function useMessages(contactNumber: string) {
-  return useQuery<Message[]>({
+  return useQuery<MessageResponse>({
     queryKey: [`/api/conversations/${contactNumber}/messages`],
     enabled: !!contactNumber,
   });
