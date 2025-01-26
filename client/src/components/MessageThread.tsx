@@ -3,32 +3,34 @@ import { useMessages, useSendMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Send } from "lucide-react";
+import { Send, Phone, PhoneOff, PhoneCall } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { format, isToday, isYesterday } from "date-fns";
+import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
 import { toast } from "@/hooks/use-toast";
 
 interface MessageThreadProps {
   contactNumber: string;
 }
 
+interface Message {
+  id: string | number;
+  contactNumber: string;
+  contactName?: string | null;
+  content: string;
+  direction: string;
+  status: string;
+  twilioSid?: string;
+  createdAt: string;
+  metadata?: {
+    channel: 'whatsapp' | 'sms' | 'voice' | 'mail';
+    callDuration?: number;
+    recordingUrl?: string;
+    transcription?: string;
+  };
+}
+
 interface MessageResponse {
-  messages: Array<{
-    id: string | number;
-    contactNumber: string;
-    contactName?: string | null;
-    content: string;
-    direction: string;
-    status: string;
-    twilioSid?: string;
-    createdAt: string;
-    metadata?: {
-      channel: 'whatsapp' | 'sms' | 'voice' | 'mail';
-      callDuration?: number;
-      recordingUrl?: string;
-      transcription?: string;
-    };
-  }>;
+  messages: Message[];
   stats: {
     total: number;
     sent: number;
@@ -39,7 +41,7 @@ interface MessageResponse {
 }
 
 export function MessageThread({ contactNumber }: MessageThreadProps) {
-  const { data, isLoading } = useMessages(contactNumber);
+  const { data, isLoading, error } = useMessages(contactNumber);
   const sendMessage = useSendMessage();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [message, setMessage] = useState("");
@@ -109,12 +111,6 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     return isRottieMessage(direction) ? 'rottie' : direction;
   };
 
-  const formatInteractionTime = (dateStr?: string) => {
-    if (!dateStr) return '';
-    //This function was removed in the edited code, but its usage remains in the original, so I have restored it.  It may need further adjustments depending on the date-fns library version.
-    return formatDistanceToNow(new Date(dateStr), { addSuffix: true });
-  };
-
   const formatCallDuration = (seconds?: number) => {
     if (!seconds) return '0s';
     const minutes = Math.floor(seconds / 60);
@@ -137,19 +133,29 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     }
   };
 
+  // Type assertion for response data
+  const messageData = data as MessageResponse;
+  const messages = messageData?.messages || [];
+  const stats = messageData?.stats;
 
   // Group messages by date
-  const groupedMessages = data?.messages?.reduce<Record<string, typeof data.messages>>((groups, msg) => {
+  const groupedMessages = messages.reduce<Record<string, Message[]>>((groups, msg) => {
     const date = format(new Date(msg.createdAt), 'yyyy-MM-dd');
     if (!groups[date]) {
       groups[date] = [];
     }
     groups[date].push(msg);
     return groups;
-  }, {}) || {};
+  }, {});
 
-  const messages = (data as MessageResponse)?.messages || [];
-  const stats = (data as MessageResponse)?.stats;
+  // Show error state if data loading failed
+  if (error) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center bg-black rounded-lg border border-zinc-800 p-4">
+        <p className="text-destructive">Error loading messages: {error.message}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col bg-black rounded-lg border border-zinc-800">
@@ -157,18 +163,11 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
         <h2 className="font-mono text-white">
           {messages[0]?.contactName || contactNumber}
         </h2>
-        <p className="font-mono text-sm text-zinc-400">
-          WhatsApp Business • {stats && (
-            <>
-              {stats.total} messages ({stats.sent} sent, {stats.received} received)
-              {stats.firstInteraction && (
-                <span className="ml-2">
-                  • First interaction: {formatInteractionTime(stats.firstInteraction)}
-                </span>
-              )}
-            </>
-          )}
-        </p>
+        {stats && (
+          <p className="font-mono text-sm text-zinc-400">
+            WhatsApp Business • {stats.total} messages ({stats.sent} sent, {stats.received} received)
+          </p>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-6 font-mono">
@@ -177,6 +176,11 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
             {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-6 w-3/4 bg-zinc-800" />
             ))}
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="text-center text-zinc-400">
+            <p>No messages yet</p>
+            <p className="text-sm mt-2">Start the conversation by sending a message</p>
           </div>
         ) : (
           <div className="space-y-6">
