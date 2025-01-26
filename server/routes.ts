@@ -382,7 +382,7 @@ export function registerRoutes(app: Express): Server {
         if (TranscriptionText) console.log('Transcription:', TranscriptionText);
         console.log('API Version:', ApiVersion);
         console.log('Account SID:', AccountSid);
-        console.log('==========================\n');
+        console.log('===========================\n');
 
         try {
           // Store call event in database
@@ -525,23 +525,45 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      // Format the recipient's WhatsApp number
-      const cleanNumber = contactNumber.replace(/\s+/g, '').replace(/[^\d+]/g, '');
+      // Validate message content
+      const contentValidation = validateMessageContent(content);
+      if (!contentValidation.isValid) {
+        return res.status(400).json({
+          error: true,
+          code: 'INVALID_MESSAGE_CONTENT',
+          message: contentValidation.error
+        });
+      }
+
+      // Validate phone number
+      const phoneValidation = validatePhoneNumber(contactNumber);
+      if (!phoneValidation.isValid) {
+        return res.status(400).json({
+          error: true,
+          code: 'INVALID_PHONE_NUMBER',
+          message: phoneValidation.error
+        });
+      }
+
+
+      // Format number for pure WhatsApp messaging
+      const cleanNumber = contactNumber.replace(/[^\d+]/g, '');
       const toNumber = cleanNumber.startsWith('+') ? cleanNumber : `+${cleanNumber}`;
 
       console.log('\n=== Sending WhatsApp Message ===');
       console.log('To:', `whatsapp:${toNumber}`);
+      console.log('From:', 'whatsapp:+14155238886'); // Twilio Sandbox number
       console.log('Content:', content);
 
       const message = await twilioClient.messages.create({
-        from: 'whatsapp:+14155238886',  // Twilio's WhatsApp sandbox number
         to: `whatsapp:${toNumber}`,
-        body: content
+        from: 'whatsapp:+14155238886', // Using sandbox number instead of our number
+        body: content,
       });
 
       console.log('Message sent successfully:', message.sid);
       console.log('Message status:', message.status);
-      console.log('===========================\n');
+      console.log('==========================\n');
 
       res.json({
         success: true,
@@ -557,7 +579,7 @@ export function registerRoutes(app: Express): Server {
       console.error('Error status:', error.status);
       console.error('Error message:', error.message);
       console.error('Error details:', error.moreInfo);
-      console.error('===========================\n');
+      console.error('==========================\n');
 
       res.status(error.status || 500).json({
         success: false,
@@ -954,7 +976,7 @@ export function registerRoutes(app: Express): Server {
               message: error.message
             }
           });
-        } else if (error.message.includes(''No active verification')) {
+        } else if (error.message.includes('No active verification')) {
           return res.status(404).json({
             success: false,
             error: {
