@@ -554,23 +554,17 @@ export function registerRoutes(app: Express): Server {
       // Basic WhatsApp number formatting
       const toNumber = contactNumber.replace(/^\+/, '');
 
-      // Construct webhook URL
-      const webhookUrl = process.env.BASE_URL
-        ? `${process.env.BASE_URL.replace(/\/$/, '')}/webhook`
-        : 'https://rapienergy.live/webhook';
-
       console.log('\n=== Sending WhatsApp Message ===');
       console.log('To:', `whatsapp:+${toNumber}`);
       console.log('Content:', content);
-      console.log('Webhook URL:', webhookUrl);
       console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
 
-      // Send message with template for first contact
+      // Send message using messaging service
       const twilioMessage = await twilioClient.messages.create({
         messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
         to: `whatsapp:+${toNumber}`,
         body: content,
-        statusCallback: webhookUrl
+        statusCallback: `${process.env.BASE_URL}/webhook`
       });
 
       console.log('Message sent successfully:', twilioMessage.sid);
@@ -587,8 +581,7 @@ export function registerRoutes(app: Express): Server {
           status: twilioMessage.status,
           twilioSid: twilioMessage.sid,
           metadata: {
-            channel: 'whatsapp',
-            webhookUrl
+            channel: 'whatsapp'
           },
         })
         .returning();
@@ -968,9 +961,8 @@ export function registerRoutes(app: Express): Server {
       console.log('Test number:', testNumber);
 
       if (!twilioClient || !process.env.TWILIO_MESSAGING_SERVICE_SID) {
-        console.error('Twilio client or messaging servicenot configured');
-        throw new Error('Messaging service not configured');
-      }
+        console.error('Twilioclient or messaging servicenot configured');
+        throw new Error('Messaging service not configured');      }
 
       // Format number for WhatsApp
       const toNumber = `whatsapp:${testNumber}`;
