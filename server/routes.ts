@@ -662,6 +662,7 @@ export function registerRoutes(app: Express): Server {
   });
 
 
+
   // Get all conversations across channels
   app.get("/api/conversations", async (_req, res) => {
     try {
@@ -951,12 +952,10 @@ export function registerRoutes(app: Express): Server {
         const toNumber = formatWhatsAppNumber(phoneNumber);
 
         if (!twilioClient || !process.env.TWILIO_MESSAGING_SERVICE_SID) {
-          throw new Error('Twilio client or messaging service not configured');
-        }
+          throw new Error('Twilio client or messaging service not configured');        }
 
         // Send code via WhatsApp
-        const message = await twilioClient.messages.create({
-          messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+        const message = await twilioClient.messages.create({          messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
           to: toNumber,
           body: `Your RottieConnect verification code is: ${code}\n\nThis code will expire in 5 minutes.`
         });
@@ -1486,6 +1485,27 @@ export function registerRoutes(app: Express): Server {
             moreInfo: error.moreInfo,
             status: error.status
           }
+        }
+      });
+    }
+  });
+
+  // Check WhatsApp configuration
+  app.get("/api/twilio/whatsapp-status", async (_req, res) => {
+    try {
+      const whatsappConfig = await VerificationService.checkWhatsAppConfiguration();
+
+      res.json({
+        success: true,
+        whatsapp: whatsappConfig
+      });
+    } catch (error: any) {
+      console.error("WhatsApp configuration check failed:", error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: error.code || 'WHATSAPP_CONFIG_CHECK_FAILED',
+          message: error.message
         }
       });
     }

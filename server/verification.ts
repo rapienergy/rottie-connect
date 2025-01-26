@@ -23,27 +23,98 @@ export class VerificationService {
   private static MAX_ATTEMPTS = CONFIG.VERIFICATION.MAX_ATTEMPTS;
   private static COOLDOWN_MINUTES = CONFIG.VERIFICATION.COOLDOWN_MINUTES;
 
+  // Check WhatsApp configuration and capabilities
+  static async checkWhatsAppConfiguration(): Promise<{ 
+    isConfigured: boolean; 
+    error?: string;
+    details?: any;
+  }> {
+    try {
+      if (!twilioClient) {
+        return { 
+          isConfigured: false, 
+          error: 'Twilio client not initialized'
+        };
+      }
+
+      if (!process.env.TWILIO_PHONE_NUMBER) {
+        return { 
+          isConfigured: false, 
+          error: 'TWILIO_PHONE_NUMBER not configured'
+        };
+      }
+
+      // Get account details to check WhatsApp capability
+      const account = await twilioClient.api.accounts(process.env.TWILIO_ACCOUNT_SID).fetch();
+      const phoneNumber = await twilioClient.incomingPhoneNumbers
+        .list({ phoneNumber: process.env.TWILIO_PHONE_NUMBER })
+        .then(numbers => numbers[0]);
+
+      if (!phoneNumber) {
+        return {
+          isConfigured: false,
+          error: 'Phone number not found in Twilio account',
+          details: { phoneNumber: process.env.TWILIO_PHONE_NUMBER }
+        };
+      }
+
+      return {
+        isConfigured: true,
+        details: {
+          accountStatus: account.status,
+          phoneNumber: phoneNumber.phoneNumber,
+          capabilities: phoneNumber.capabilities
+        }
+      };
+    } catch (error: any) {
+      return {
+        isConfigured: false,
+        error: error.message,
+        details: {
+          code: error.code,
+          moreInfo: error.moreInfo,
+          status: error.status
+        }
+      };
+    }
+  }
+
   // Test function to send a basic WhatsApp message
   static async sendTestMessage(toNumber: string): Promise<boolean> {
     try {
       console.log('\n=== Starting Test Message Send ===');
 
-      if (!twilioClient) {
-        throw new Error('Twilio client not initialized');
+      // Check WhatsApp configuration first
+      const whatsappConfig = await this.checkWhatsAppConfiguration();
+      if (!whatsappConfig.isConfigured) {
+        throw new Error(`WhatsApp not properly configured: ${whatsappConfig.error}`);
       }
 
-      // Clean and format the number
+      console.log('WhatsApp configuration:', whatsappConfig.details);
+
+      if (!twilioClient || !process.env.TWILIO_PHONE_NUMBER) {
+        throw new Error('Twilio client or phone number not configured');
+      }
+
+      // Format the WhatsApp numbers correctly
+      const fromNumber = `whatsapp:${process.env.TWILIO_PHONE_NUMBER.replace(/\s+/g, '')}`;
       const cleanNumber = toNumber.replace(/\s+/g, '').replace(/[^\d+]/g, '');
       const formattedNumber = cleanNumber.startsWith('+') ? cleanNumber : `+${cleanNumber}`;
       const whatsappNumber = `whatsapp:${formattedNumber}`;
 
+      console.log('Sending from:', fromNumber);
       console.log('Sending to:', whatsappNumber);
-      console.log('From:', `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`);
 
+      // Use an approved template message for initial contact
       const message = await twilioClient.messages.create({
-        from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
+        from: fromNumber,
         to: whatsappNumber,
-        body: 'Hello! This is a test message from RottieConnect.'
+        body: 'Your RottieConnect verification code is {{1}}. This code will expire in {{2}} minutes.',
+        contentSid: null,
+        contentVariables: JSON.stringify({
+          1: '123456',
+          2: '5'
+        })
       });
 
       console.log('Message sent successfully!');
@@ -89,7 +160,7 @@ export class VerificationService {
 
       // If there's an existing verification, check cooldown
       if (existingVerification) {
-        const cooldownEndTime = new Date(existingVerification.createdAt);
+        const cooldownEndTime = new Date(existingVerification.createdAt.getTime());
         cooldownEndTime.setMinutes(cooldownEndTime.getMinutes() + this.COOLDOWN_MINUTES);
 
         if (now < cooldownEndTime) {
