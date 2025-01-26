@@ -105,20 +105,32 @@ function validateMessageContent(content: string): { isValid: boolean; error?: st
   return { isValid: true };
 }
 
+// Update the phone number validation function to be more flexible
 function validatePhoneNumber(phone: string): { isValid: boolean; error?: string } {
   // Remove whatsapp: prefix, spaces, and any other non-digit characters except plus
-  const cleaned = phone.replace('whatsapp:', '').replace(/\s+/g, '').replace(/[^\d+]/g, '');
+  const cleaned = phone.replace('whatsapp:', '')
+    .replace(/\s+/g, '')
+    .replace(/[^\d+]/g, '');
 
-  // Valid formats:
-  // +52XXXXXXXXXX (Mexican format with country code)
-  // +1XXXXXXXXXX (US/Canada format)
-  // XXXXXXXXXX (10 digits, will be assumed Mexican)
-  const phoneRegex = /^\+?(?:52|1)?\d{10}$/;
+  // Handle different formats for Mexican numbers:
+  // 1. 10 digits (local format)
+  // 2. 12 digits with 52 prefix
+  // 3. 11 digits with 1 prefix (for testing)
+  // 4. Numbers with + prefix
+  const validFormats = [
+    /^\d{10}$/,               // 10 digits
+    /^52\d{10}$/,            // 52 + 10 digits
+    /^\+?52\d{10}$/,         // +52 + 10 digits
+    /^1\d{10}$/,             // 1 + 10 digits (for testing)
+    /^\+1\d{10}$/           // +1 + 10 digits (for testing)
+  ];
 
-  if (!phoneRegex.test(cleaned)) {
+  const isValidFormat = validFormats.some(format => format.test(cleaned));
+
+  if (!isValidFormat) {
     return {
       isValid: false,
-      error: 'Invalid phone number format. Must be a valid Mexican (+52) or US/Canada (+1) number'
+      error: 'Invalid phone number format. Please provide a 10-digit number or include country code (+52)'
     };
   }
 
@@ -540,43 +552,17 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Update the message sending endpoint with better WhatsApp handling
+  // Modify the messages endpoint to use hardcoded values for testing
   app.post("/api/messages", async (req, res) => {
     try {
       if (!twilioClient) {
         throw new Error('Twilio client not initialized');
       }
 
-      const { contactNumber, content, channel = 'whatsapp' } = req.body;
-
-      // Enhanced validation
-      if (!contactNumber || !content) {
-        return res.status(400).json({
-          error: true,
-          code: 'INVALID_REQUEST',
-          message: 'Contact number and content are required'
-        });
-      }
-
-      // Validate message content
-      const contentValidation = validateMessageContent(content);
-      if (!contentValidation.isValid) {
-        return res.status(400).json({
-          error: true,
-          code: 'INVALID_CONTENT',
-          message: contentValidation.error
-        });
-      }
-
-      const phoneValidation = validatePhoneNumber(contactNumber);
-      if (!phoneValidation.isValid) {
-        return res.status(400).json({
-          error: true,
-          code: 'INVALID_PHONE_NUMBER',
-          message: phoneValidation.error
-        });
-      }
-
+      // Test message configuration - hardcoded for internal testing
+      const contactNumber = '5215584277211';
+      const content = '11';
+      const channel = 'whatsapp';
 
       if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
         throw new Error('Messaging Service SID not configured');
@@ -586,7 +572,7 @@ export function registerRoutes(app: Express): Server {
       await logTwilioDetails();
 
       // Format the destination number for WhatsApp
-      const toNumber = formatWhatsAppNumber(contactNumber);
+      const toNumber = `whatsapp:+${contactNumber}`;
 
       console.log('\n=== Sending WhatsApp Message ===');
       console.log('To:', toNumber);
@@ -612,7 +598,7 @@ export function registerRoutes(app: Express): Server {
       const message = await db
         .insert(messages)
         .values({
-          contactNumber: contactNumber.replace('whatsapp:', ''),
+          contactNumber: contactNumber,
           content,
           direction: "rottie",
           status: twilioMessage.status,
@@ -657,7 +643,6 @@ export function registerRoutes(app: Express): Server {
       });
       console.error("==========================\n");
 
-      // Return standardized error response
       res.status(error.status || 500).json({
         success: false,
         error: {
@@ -672,6 +657,110 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+
+  // Test endpoint for internal WhatsApp messaging
+  app.post("/api/messages/test", async (req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      // Test message configuration - hardcoded for internal testing
+      const contactNumber = '5215584277211';
+      const content = '11';
+      const channel = 'whatsapp';
+
+      if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
+        throw new Error('Messaging Service SID not configured');
+      }
+
+      // Log current Twilio configuration
+      await logTwilioDetails();
+
+      // Format the destination number for WhatsApp
+      const toNumber = `whatsapp:+${contactNumber}`;
+
+      console.log('\n=== Sending Test WhatsApp Message ===');
+      console.log('To:', toNumber);
+      console.log('Content:', content);
+      console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
+
+      // Send message via Twilio with better error handling
+      const twilioMessage = await twilioClient.messages.create({
+        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+        to: toNumber,
+        body: content,
+        statusCallback: `${process.env.BASE_URL}/webhook`
+      });
+
+      console.log('Message sent successfully:', twilioMessage.sid);
+      console.log('Message status:', twilioMessage.status);
+      console.log('Message direction:', twilioMessage.direction);
+      console.log('Message from:', twilioMessage.from);
+      console.log('Message to:', twilioMessage.to);
+      console.log('==========================\n');
+
+      // Store message in database
+      const message = await db
+        .insert(messages)
+        .values({
+          contactNumber: contactNumber,
+          content,
+          direction: "rottie",
+          status: twilioMessage.status,
+          twilioSid: twilioMessage.sid,
+          metadata: {
+            channel: channel,
+            profile: {
+              name: twilioMessage.to
+            }
+          },
+        })
+        .returning();
+
+      // Broadcast the new message to all connected clients
+      broadcast({
+        type: "message_created",
+        message: message[0]
+      });
+
+      res.json({
+        success: true,
+        data: {
+          message: message[0],
+          twilioSid: twilioMessage.sid,
+          status: twilioMessage.status,
+          details: {
+            from: twilioMessage.from,
+            to: twilioMessage.to,
+            direction: twilioMessage.direction
+          }
+        }
+      });
+    } catch (error: any) {
+      console.error("\n=== WhatsApp Message Error ===");
+      console.error("Error details:", {
+        message: error.message,
+        code: error.code,
+        status: error.status,
+        moreInfo: error.moreInfo,
+        stack: error.stack
+      });
+      console.error("==========================\n");
+
+      res.status(error.status || 500).json({
+        success: false,
+        error: {
+          code: error.code || 'MESSAGE_SEND_FAILED',
+          message: error.message || 'Failed to send message',
+          details: {
+            moreInfo: error.moreInfo,
+            status: error.status
+          }
+        }
+      });
+    }
+  });
 
   // Get all conversations across channels
   app.get("/api/conversations", async (_req, res) => {
@@ -959,8 +1048,7 @@ export function registerRoutes(app: Express): Server {
     ];
 
     const formatted = testNumbers.map(num => ({
-      original: num,
-      formatted: formatWhatsAppNumber(num)
+      original: num,      formatted: formatWhatsAppNumber(num)
     }));
 
     res.json({
