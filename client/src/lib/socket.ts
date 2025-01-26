@@ -64,9 +64,20 @@ export function connectWebSocket() {
           queryClient.setQueryData(
             [`/api/conversations/${data.message.contactNumber}/messages`],
             (oldData: any) => {
-              if (!oldData) return [data.message];
-              if (messageExists(oldData, data.message)) return oldData;
-              return [...oldData, data.message];
+              if (!oldData) return { messages: [data.message], stats: { total: 1, sent: 0, received: 1 } };
+              if (messageExists(oldData.messages, data.message)) return oldData;
+
+              const newStats = {
+                ...oldData.stats,
+                total: oldData.stats.total + 1,
+                sent: isRottieMessage(data.message.direction) ? oldData.stats.sent + 1 : oldData.stats.sent,
+                received: !isRottieMessage(data.message.direction) ? oldData.stats.received + 1 : oldData.stats.received
+              };
+
+              return {
+                messages: [...oldData.messages, data.message],
+                stats: newStats
+              };
             }
           );
 
@@ -113,8 +124,8 @@ export function connectWebSocket() {
             [`/api/conversations/${data.message.contactNumber}/messages`],
             (oldData: any) => {
               if (!oldData) return oldData;
-              return oldData.map((msg: any) => 
-                msg.twilioSid === data.message.twilioSid 
+              return oldData.map((msg: any) =>
+                msg.twilioSid === data.message.twilioSid
                   ? { ...msg, status: data.message.status }
                   : msg
               );
@@ -212,3 +223,5 @@ if (typeof window !== 'undefined') {
     }
   });
 }
+
+const isRottieMessage = (direction: string): boolean => direction === 'sent';

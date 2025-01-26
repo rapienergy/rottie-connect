@@ -109,7 +109,7 @@ export function Dashboard() {
               </div>
             ) : (
               <div className="space-y-1">
-                {conversations?.filter((conv: Conversation) => conv.channel === 'whatsapp').map((conversation) => (
+                {conversations?.map((conversation) => (
                   <div key={conversation.contactNumber} className="flex flex-col gap-2">
                     <button
                       onClick={() => setSelectedNumber(conversation.contactNumber)}
@@ -147,7 +147,7 @@ export function Dashboard() {
 
                 {conversations?.length === 0 && (
                   <div className="text-center text-zinc-400 font-mono p-4">
-                    <p>No WhatsApp conversations yet</p>
+                    <p>No conversations yet</p>
                     <p className="text-xs mt-2">Messages will appear here when received</p>
                   </div>
                 )}
