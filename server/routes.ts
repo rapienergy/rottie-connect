@@ -530,7 +530,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Update the message sending endpoint with template support
+  // Send message with proper webhook configuration
   app.post("/api/messages", async (req, res) => {
     try {
       if (!twilioClient) {
@@ -552,19 +552,25 @@ export function registerRoutes(app: Express): Server {
       }
 
       // Basic WhatsApp number formatting
-      const fromNumber = process.env.TWILIO_PHONE_NUMBER.replace(/\s+/g, '');
       const toNumber = contactNumber.replace(/^\+/, '');
 
+      // Construct webhook URL
+      const webhookUrl = process.env.BASE_URL
+        ? `${process.env.BASE_URL.replace(/\/$/, '')}/webhook`
+        : 'https://rapienergy.live/webhook';
+
       console.log('\n=== Sending WhatsApp Message ===');
-      console.log('From:', fromNumber);
-      console.log('To:', toNumber);
+      console.log('To:', `whatsapp:+${toNumber}`);
       console.log('Content:', content);
+      console.log('Webhook URL:', webhookUrl);
+      console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
 
       // Send message with template for first contact
       const twilioMessage = await twilioClient.messages.create({
-        from: `whatsapp:${fromNumber}`,
+        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
         to: `whatsapp:+${toNumber}`,
-        body: `Your RottieConnect code is: ${content}.\n\nThis is a test message.`,
+        body: content,
+        statusCallback: webhookUrl
       });
 
       console.log('Message sent successfully:', twilioMessage.sid);
@@ -581,7 +587,8 @@ export function registerRoutes(app: Express): Server {
           status: twilioMessage.status,
           twilioSid: twilioMessage.sid,
           metadata: {
-            channel: 'whatsapp'
+            channel: 'whatsapp',
+            webhookUrl
           },
         })
         .returning();
@@ -956,12 +963,12 @@ export function registerRoutes(app: Express): Server {
   // Test verification code sending
   app.get("/api/verify/test", async (_req, res) => {
     try {
-      console.log('\n=== Testing Verification Code Sending ===');
+      console.log('\n=== Testing Verification CodeSending ===');
       const testNumber = CONFIG.VERIFICATION.TEST_PHONE_NUMBER;
       console.log('Test number:', testNumber);
 
       if (!twilioClient || !process.env.TWILIO_MESSAGING_SERVICE_SID) {
-        consoleerror('Twilio client or messaging servicenot configured');
+        console.error('Twilio client or messaging servicenot configured');
         throw new Error('Messaging service not configured');
       }
 
