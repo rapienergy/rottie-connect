@@ -224,4 +224,6 @@ if (typeof window !== 'undefined') {
   });
 }
 
-const isRottieMessage = (direction: string): boolean => direction === 'sent';
+const isRottieMessage = (direction: string): boolean => {
+  return direction === 'rottie' || direction === 'outbound-api' || direction.startsWith('outbound');
+};

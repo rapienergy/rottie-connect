@@ -51,6 +51,8 @@ interface SendMessageParams {
 export function useConversations() {
   return useQuery<Conversation[]>({
     queryKey: ['/api/conversations'],
+    staleTime: 0, // This ensures we always fetch fresh data
+    refetchInterval: 5000, // Refetch every 5 seconds to keep conversations up to date
   });
 }
 
@@ -58,6 +60,8 @@ export function useMessages(contactNumber: string) {
   return useQuery<MessageResponse>({
     queryKey: [`/api/conversations/${contactNumber}/messages`],
     enabled: !!contactNumber,
+    staleTime: 0, // Always fetch fresh data
+    refetchInterval: 3000, // Refetch every 3 seconds
   });
 }
 
