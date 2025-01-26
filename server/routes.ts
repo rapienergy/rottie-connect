@@ -1249,6 +1249,62 @@ export function registerRoutes(app: Express): Server {
 
   // Add before the end of registerRoutes function, before return httpServer
 
+  // Add simple direct message test endpoint
+  app.post("/api/send-direct", async (_req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      const testNumber = "+5215584277211";
+      const message = "Test message from RottieConnect at " + new Date().toLocaleString();
+
+      console.log('\n=== Sending Direct WhatsApp Message ===');
+      console.log('From:', process.env.TWILIO_PHONE_NUMBER);
+      console.log('To:', testNumber);
+      console.log('Message:', message);
+
+      // Format numbers for WhatsApp
+      const fromWhatsApp = `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`;
+      const toWhatsApp = `whatsapp:${testNumber}`;
+
+      // Send message with minimal parameters
+      const result = await twilioClient.messages.create({
+        from: fromWhatsApp,
+        to: toWhatsApp,
+        body: message
+      });
+
+      console.log('Message sent!');
+      console.log('SID:', result.sid);
+      console.log('Status:', result.status);
+      console.log('Error Code:', result.errorCode);
+      console.log('Error Message:', result.errorMessage);
+      console.log('=== Direct Message Complete ===\n');
+
+      res.json({
+        success: true,
+        messageId: result.sid,
+        status: result.status,
+        details: {
+          errorCode: result.errorCode,
+          errorMessage: result.errorMessage
+        }
+      });
+
+    } catch (error: any) {
+      console.error('Failed to send direct message:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          message: error.message,
+          code: error.code,
+          moreInfo: error.moreInfo
+        }
+      });
+    }
+  });
+
   // Test sending a basic WhatsApp message
   app.post("/api/twilio/test-message", async (req, res) => {
     try {
@@ -1554,7 +1610,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Add test message endpoint
+  // Add test message sending endpoint
   app.post("/api/test-whatsapp", async (_req, res) => {
     try {
       if (!twilioClient) {
