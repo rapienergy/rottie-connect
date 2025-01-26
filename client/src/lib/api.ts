@@ -19,10 +19,28 @@ export interface Message {
   };
 }
 
+export interface Conversation {
+  contactNumber: string;
+  contactName?: string;
+  latestMessage: {
+    content: string;
+    direction: string;
+    status: string;
+    createdAt: string;
+  };
+  channel: 'whatsapp' | 'sms' | 'voice';
+}
+
 interface SendMessageParams {
   contactNumber: string;
   content: string;
   channel?: 'whatsapp' | 'sms' | 'voice';
+}
+
+export function useConversations() {
+  return useQuery<Conversation[]>({
+    queryKey: ['/api/conversations'],
+  });
 }
 
 export function useMessages(contactNumber: string) {

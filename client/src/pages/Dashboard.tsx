@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useConversations } from "@/lib/api";
+import { useConversations, type Conversation } from "@/lib/api";
 import { MessageThread } from "@/components/MessageThread";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MessageSquare, AlertCircle, Phone } from "lucide-react";
@@ -8,10 +8,17 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 
+interface TwilioStatus {
+  status: string;
+  friendlyName?: string;
+  whatsappNumber?: string;
+  message?: string;
+}
+
 export function Dashboard() {
   const [selectedNumber, setSelectedNumber] = useState<string | null>(null);
   const { data: conversations, isLoading } = useConversations();
-  const { data: twilioStatus } = useQuery({
+  const { data: twilioStatus } = useQuery<TwilioStatus>({
     queryKey: ["/api/twilio/status"],
     refetchInterval: 30000, // Check connection every 30 seconds
   });
@@ -102,7 +109,7 @@ export function Dashboard() {
               </div>
             ) : (
               <div className="space-y-1">
-                {conversations?.filter(conv => conv.channel === 'whatsapp').map((conversation) => (
+                {conversations?.filter((conv: Conversation) => conv.channel === 'whatsapp').map((conversation) => (
                   <div key={conversation.contactNumber} className="flex flex-col gap-2">
                     <button
                       onClick={() => setSelectedNumber(conversation.contactNumber)}
