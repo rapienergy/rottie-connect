@@ -573,22 +573,13 @@ export function registerRoutes(app: Express): Server {
       console.log('Content:', content);
       console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
 
-      // Send message via Twilio Messaging Service with proper error handling
-      const messagingOptions = {
+      // Send message via Twilio with simplified options
+      const twilioMessage = await twilioClient.messages.create({
         messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
         to: toNumber,
         body: content,
-        // Ensure messages are sent through WhatsApp
-        contentType: 'text/plain',
-        contentSid: null,
-        contentVariables: null,
-        mediaUrl: null,
         statusCallback: `${process.env.BASE_URL}/webhook`
-      };
-
-      console.log('Message options:', JSON.stringify(messagingOptions, null, 2));
-
-      const twilioMessage = await twilioClient.messages.create(messagingOptions);
+      });
 
       console.log('Message sent successfully:', twilioMessage.sid);
       console.log('Message status:', twilioMessage.status);
@@ -662,6 +653,7 @@ export function registerRoutes(app: Express): Server {
   });
 
 
+
   // Get all conversations across channels
   app.get("/api/conversations", async (_req, res) => {
     try {
@@ -731,8 +723,8 @@ export function registerRoutes(app: Express): Server {
 
       // Sort conversations by latest message date
       const sortedConversations = Object.values(conversations)
-        .sort((a: any, b: any) => 
-          new Date(b.latestMessage.createdAt).getTime() - 
+        .sort((a: any, b: any) =>
+          new Date(b.latestMessage.createdAt).getTime() -
           new Date(a.latestMessage.createdAt).getTime()
         );
 
