@@ -670,21 +670,40 @@ export function registerRoutes(app: Express): Server {
       }
       console.log('Fetching messages from Twilio...');
 
+      // Increase limit to get more historical messages
       const twilioMessages = await twilioClient.messages.list({
-        limit: 50
+        limit: 1000 // Increased from 50 to 1000
       });
 
       console.log(`Found ${twilioMessages.length} messages`);
 
+      // Normalize phone numbers for consistent comparison
+      const normalizeNumber = (phone: string): string => {
+        return phone.replace(/[^\d+]/g, '')  // Remove all non-digit characters except +
+          .replace(/^(\+?52|0052)/, '')     // Remove Mexico country code
+          .replace(/^(\+?1|001)/, '')       // Remove US/Canada country code
+          .slice(-10);                       // Keep only the last 10 digits
+      };
+
       const conversations = twilioMessages.reduce((acc: any, msg: any) => {
         const isWhatsApp = msg.to?.startsWith('whatsapp:') || msg.from?.startsWith('whatsapp:');
         const channel = isWhatsApp ? 'whatsapp' : 'sms';
-        const contactNumber = (isWhatsApp ?
-          (msg.to?.startsWith('whatsapp:') ? msg.from : msg.to)?.replace('whatsapp:', '') :
-          (msg.direction === 'inbound' ? msg.from : msg.to));
 
-        if (!acc[contactNumber]) {
-          acc[contactNumber] = {
+        // Get the contact number (the other party in the conversation)
+        let contactNumber = isWhatsApp
+          ? (msg.to?.startsWith('whatsapp:') ? msg.from : msg.to)?.replace('whatsapp:', '')
+          : (msg.direction === 'inbound' ? msg.from : msg.to);
+
+        // Normalize the contact number
+        const normalizedNumber = normalizeNumber(contactNumber || '');
+
+        if (!normalizedNumber) return acc;
+
+        // Format the number for display with proper country code
+        contactNumber = `+52${normalizedNumber}`;
+
+        if (!acc[normalizedNumber]) {
+          acc[normalizedNumber] = {
             contactNumber,
             latestMessage: {
               content: msg.body,
@@ -692,20 +711,33 @@ export function registerRoutes(app: Express): Server {
               status: msg.status,
               createdAt: msg.dateCreated
             },
-            channel
+            channel,
+            messageCount: 1
           };
-        } else if (new Date(msg.dateCreated) > new Date(acc[contactNumber].latestMessage.createdAt)) {
-          acc[contactNumber].latestMessage = {
-            content: msg.body,
-            direction: msg.direction,
-            status: msg.status,
-            createdAt: msg.dateCreated
-          };
+        } else {
+          acc[normalizedNumber].messageCount++;
+          // Update if this message is more recent
+          if (new Date(msg.dateCreated) > new Date(acc[normalizedNumber].latestMessage.createdAt)) {
+            acc[normalizedNumber].latestMessage = {
+              content: msg.body,
+              direction: msg.direction,
+              status: msg.status,
+              createdAt: msg.dateCreated
+            };
+          }
         }
         return acc;
       }, {});
 
-      res.json(Object.values(conversations));
+      // Sort conversations by latest message date
+      const sortedConversations = Object.values(conversations)
+        .sort((a: any, b: any) => 
+          new Date(b.latestMessage.createdAt).getTime() - 
+          new Date(a.latestMessage.createdAt).getTime()
+        );
+
+      console.log('Returning conversations:', sortedConversations.length);
+      res.json(sortedConversations);
     } catch (error: any) {
       console.error("Error fetching conversations:", error);
       res.status(500).json({
