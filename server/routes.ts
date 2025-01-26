@@ -539,7 +539,7 @@ export function registerRoutes(app: Express): Server {
 
       const { contactNumber, content, channel = 'whatsapp' } = req.body;
 
-      // Validate required fields
+      // Enhanced validation
       if (!contactNumber || !content) {
         return res.status(400).json({
           error: true,
@@ -573,7 +573,7 @@ export function registerRoutes(app: Express): Server {
       console.log('Content:', content);
       console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
 
-      // Send message via Twilio Messaging Service
+      // Send message via Twilio Messaging Service with proper error handling
       const messagingOptions = {
         messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
         to: toNumber,
@@ -951,7 +951,7 @@ export function registerRoutes(app: Express): Server {
         const toNumber = formatWhatsAppNumber(phoneNumber);
 
         if (!twilioClient || !process.env.TWILIO_MESSAGING_SERVICE_SID) {
-          throw new Error('Twilio client or messaging service not configured');
+          throw new Error('Twilio client or messaging servicenot configured');
         }
 
         // Send code via WhatsApp

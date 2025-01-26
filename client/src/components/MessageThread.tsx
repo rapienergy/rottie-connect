@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMessages, useSendMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,6 +6,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Send, Phone, PhoneOff, PhoneCall } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
+import { toast } from "@/components/ui/use-toast";
+import { Loader2 } from "lucide-react";
 
 interface MessageThreadProps {
   contactNumber: string;
@@ -44,6 +46,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
   const sendMessage = useSendMessage();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [isSending, setIsSending] = useState(false);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -59,9 +62,10 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     const content = new FormData(form).get("content") as string;
 
     if (!content.trim()) return;
+    setIsSending(true);
 
     try {
-      await sendMessage.mutateAsync({ 
+      await sendMessage.mutateAsync({
         contactNumber,
         content,
         channel: 'whatsapp'
@@ -70,6 +74,13 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
       inputRef.current?.focus();
     } catch (error) {
       console.error('Failed to send message:', error);
+      toast({
+        title: "Error",
+        description: "Failed to send message. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -102,7 +113,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     if (!seconds) return '0s';
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
-    return minutes > 0 
+    return minutes > 0
       ? `${minutes}m ${remainingSeconds}s`
       : `${remainingSeconds}s`;
   };
@@ -171,8 +182,8 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
                     key={`${message.id}-${message.twilioSid}`}
                     className={cn(
                       "text-sm whitespace-pre-wrap",
-                      message.metadata?.channel === 'voice' 
-                        ? "flex items-center gap-2" 
+                      message.metadata?.channel === 'voice'
+                        ? "flex items-center gap-2"
                         : "",
                       isRottieMessage(message.direction) ? "text-blue-400" : "text-green-400"
                     )}
@@ -186,9 +197,9 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
                             <span className="text-zinc-500"> • Duration: {formatCallDuration(message.metadata.callDuration)}</span>
                           )}
                           {message.metadata.recordingUrl && (
-                            <a 
-                              href={message.metadata.recordingUrl} 
-                              target="_blank" 
+                            <a
+                              href={message.metadata.recordingUrl}
+                              target="_blank"
                               rel="noopener noreferrer"
                               className="ml-2 text-blue-500 hover:underline"
                             >
@@ -222,14 +233,19 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
           placeholder="Type your message..."
           autoComplete="off"
           className="bg-zinc-900 border-zinc-700 text-white font-mono"
+          disabled={isSending}
         />
-        <Button 
-          type="submit" 
-          size="icon" 
+        <Button
+          type="submit"
+          size="icon"
           className="bg-green-900 hover:bg-green-800"
-          disabled={sendMessage.isPending}
+          disabled={isSending || sendMessage.isPending}
         >
-          <Send className="h-4 w-4" />
+          {(isSending || sendMessage.isPending) ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Send className="h-4 w-4" />
+          )}
         </Button>
       </form>
     </div>
