@@ -547,9 +547,36 @@ export function registerRoutes(app: Express): Server {
         throw new Error('Twilio client not initialized');
       }
 
-      // Test message configuration
-      const contactNumber = '+5215584277211';
-      const content = '11';
+      const { contactNumber, content, channel = 'whatsapp' } = req.body;
+
+      // Enhanced validation
+      if (!contactNumber || !content) {
+        return res.status(400).json({
+          error: true,
+          code: 'INVALID_REQUEST',
+          message: 'Contact number and content are required'
+        });
+      }
+
+      // Validate message content
+      const contentValidation = validateMessageContent(content);
+      if (!contentValidation.isValid) {
+        return res.status(400).json({
+          error: true,
+          code: 'INVALID_CONTENT',
+          message: contentValidation.error
+        });
+      }
+
+      const phoneValidation = validatePhoneNumber(contactNumber);
+      if (!phoneValidation.isValid) {
+        return res.status(400).json({
+          error: true,
+          code: 'INVALID_PHONE_NUMBER',
+          message: phoneValidation.error
+        });
+      }
+
 
       if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
         throw new Error('Messaging Service SID not configured');
@@ -591,7 +618,7 @@ export function registerRoutes(app: Express): Server {
           status: twilioMessage.status,
           twilioSid: twilioMessage.sid,
           metadata: {
-            channel: 'whatsapp',
+            channel: channel,
             profile: {
               name: twilioMessage.to
             }
@@ -644,7 +671,6 @@ export function registerRoutes(app: Express): Server {
       });
     }
   });
-
 
 
   // Get all conversations across channels
