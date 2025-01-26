@@ -547,41 +547,71 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      if (!process.env.TWILIO_PHONE_NUMBER) {
-        throw new Error('TWILIO_PHONE_NUMBER not configured');
+      if (!process.env.TWILIO_PHONE_NUMBER || !process.env.TWILIO_MESSAGING_SERVICE_SID) {
+        throw new Error('Missing required Twilio configuration');
       }
 
-      // Basic WhatsApp number formatting
-      const toNumber = contactNumber.replace(/^\+/, '');
+      // Properly format the WhatsApp number
+      const cleanNumber = contactNumber.replace(/\s+/g, '').replace(/[^\d+]/g, '');
+      const formattedNumber = cleanNumber.startsWith('+') ? cleanNumber : `+${cleanNumber}`;
+      const whatsappNumber = `whatsapp:${formattedNumber}`;
 
       console.log('\n=== Sending WhatsApp Message ===');
-      console.log('To:', `whatsapp:+${toNumber}`);
+      console.log('To:', whatsappNumber);
+      console.log('From WhatsApp number:', process.env.TWILIO_PHONE_NUMBER);
       console.log('Content:', content);
-      console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
 
-      // Send message using messaging service
-      const twilioMessage = await twilioClient.messages.create({
-        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
-        to: `whatsapp:+${toNumber}`,
-        body: content,
-        statusCallback: `${process.env.BASE_URL}/webhook`
+      // First, check if this is the first message to this number
+      const previousMessages = await twilioClient.messages.list({
+        to: whatsappNumber,
+        limit: 1
       });
 
-      console.log('Message sent successfully:', twilioMessage.sid);
-      console.log('Message status:', twilioMessage.status);
-      console.log('==========================\n');
+      let twilioMessage;
+      if (previousMessages.length === 0) {
+        // For first contact, use a template message
+        console.log('First contact - using template message');
+        twilioMessage = await twilioClient.messages.create({
+          from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
+          to: whatsappNumber,
+          body: 'Your RottieConnect code is: {{1}}. This code will expire in {{2}} minutes.',
+          contentSid: null, // Remove if not using content templates
+          contentVariables: JSON.stringify({
+            1: content,
+            2: '5'
+          })
+        });
+      } else {
+        // For subsequent messages, use normal message sending
+        console.log('Subsequent contact - using direct message');
+        twilioMessage = await twilioClient.messages.create({
+          from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
+          to: whatsappNumber,
+          body: content
+        });
+      }
+
+      console.log('Message sent successfully');
+      console.log('Message SID:', twilioMessage.sid);
+      console.log('Status:', twilioMessage.status);
+      console.log('Error Code:', twilioMessage.errorCode);
+      console.log('Error Message:', twilioMessage.errorMessage);
+      console.log('=== WhatsApp Message Send Complete ===\n');
 
       // Store message in database
       const message = await db
         .insert(messages)
         .values({
-          contactNumber: contactNumber.replace('whatsapp:', ''),
+          contactNumber: formattedNumber,
           content,
           direction: "rottie",
           status: twilioMessage.status,
           twilioSid: twilioMessage.sid,
           metadata: {
-            channel: 'whatsapp'
+            channel: 'whatsapp',
+            messageType: previousMessages.length === 0 ? 'template' : 'direct',
+            errorCode: twilioMessage.errorCode,
+            errorMessage: twilioMessage.errorMessage
           },
         })
         .returning();
@@ -597,7 +627,12 @@ export function registerRoutes(app: Express): Server {
         data: {
           message: message[0],
           twilioSid: twilioMessage.sid,
-          status: twilioMessage.status
+          status: twilioMessage.status,
+          details: {
+            messageType: previousMessages.length === 0 ? 'template' : 'direct',
+            errorCode: twilioMessage.errorCode,
+            errorMessage: twilioMessage.errorMessage
+          }
         }
       });
     } catch (error: any) {
@@ -607,6 +642,7 @@ export function registerRoutes(app: Express): Server {
         code: error.code,
         status: error.status,
         moreInfo: error.moreInfo,
+        details: error.details,
         stack: error.stack
       });
       console.error("==========================\n");
@@ -618,7 +654,9 @@ export function registerRoutes(app: Express): Server {
           message: error.message || 'Failed to send message',
           details: {
             moreInfo: error.moreInfo,
-            status: error.status
+            status: error.status,
+            errorCode: error.errorCode,
+            errorMessage: error.errorMessage
           }
         }
       });
@@ -914,8 +952,7 @@ export function registerRoutes(app: Express): Server {
   app.get("/api/verify/test-config", async (_req, res) => {
     try {
       console.log('\n=== Testing Configuration ===');
-      console.log('Twilio Account SID exists:', !!process.env.TWILIO_ACCOUNT_SID);
-      console.log('Twilio Auth Token exists:', !!process.env.TWILIO_AUTH_TOKEN);
+      console.log('Twilio Account SID exists:', !!process.env.TWILIO_ACCOUNT_SID);      console.log('Twilio Auth Token exists:', !!process.env.TWILIO_AUTH_TOKEN);
       console.log('Twilio Messaging Service SID exists:', !!process.env.TWILIO_MESSAGING_SERVICE_SID);
       console.log('Twilio Phone Number:', process.env.TWILIO_PHONE_NUMBER);
 
