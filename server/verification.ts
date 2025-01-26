@@ -5,10 +5,17 @@ import { and, eq, gt } from "drizzle-orm";
 import twilio from "twilio";
 import { CONFIG } from "./config";
 
-// Initialize Twilio client
+// Initialize Twilio client with detailed logging
 const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
   ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
   : null;
+
+if (!twilioClient) {
+  console.error('Twilio client initialization failed:');
+  console.error('- TWILIO_ACCOUNT_SID exists:', !!process.env.TWILIO_ACCOUNT_SID);
+  console.error('- TWILIO_AUTH_TOKEN exists:', !!process.env.TWILIO_AUTH_TOKEN);
+  console.error('- TWILIO_MESSAGING_SERVICE_SID exists:', !!process.env.TWILIO_MESSAGING_SERVICE_SID);
+}
 
 export class VerificationService {
   private static CODE_LENGTH = CONFIG.VERIFICATION.CODE_LENGTH;
@@ -72,7 +79,7 @@ export class VerificationService {
       // Send verification code via WhatsApp
       if (twilioClient && process.env.TWILIO_MESSAGING_SERVICE_SID) {
         // Remove the + prefix for WhatsApp number format
-        const toNumber = `whatsapp:${formattedNumber.substring(1)}`;
+        const toNumber = `whatsapp:${formattedNumber}`;
         console.log('Sending WhatsApp message to:', toNumber);
         console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
 
@@ -85,6 +92,9 @@ export class VerificationService {
 
           console.log('Message sent successfully:', message.sid);
           console.log('Message status:', message.status);
+          console.log('Message direction:', message.direction);
+          console.log('Message from:', message.from);
+          console.log('Message to:', message.to);
         } catch (error) {
           console.error('Error sending WhatsApp message:', error);
           throw new Error('Failed to send verification code via WhatsApp');
@@ -134,7 +144,7 @@ export class VerificationService {
       const newAttempts = (verification.attempts || 0) + 1;
       await db
         .update(verificationCodes)
-        .set({ 
+        .set({
           attempts: newAttempts,
           lastAttemptAt: now
         })
