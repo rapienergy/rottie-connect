@@ -530,16 +530,15 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Update the message sending endpoint with better WhatsApp handling
+  // Update the message sending endpoint with template support
   app.post("/api/messages", async (req, res) => {
     try {
       if (!twilioClient) {
         throw new Error('Twilio client not initialized');
       }
 
-      const { contactNumber, content, channel = 'whatsapp' } = req.body;
+      const { contactNumber, content } = req.body;
 
-      // Validate required fields
       if (!contactNumber || !content) {
         return res.status(400).json({
           error: true,
@@ -548,53 +547,28 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      // Validate message content
-      const contentValidation = validateMessageContent(content);
-      if (!contentValidation.isValid) {
-        return res.status(400).json({
-          error: true,
-          code: 'INVALID_CONTENT',
-          message: contentValidation.error
-        });
+      if (!process.env.TWILIO_PHONE_NUMBER) {
+        throw new Error('TWILIO_PHONE_NUMBER not configured');
       }
 
-      if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
-        throw new Error('Messaging Service SID not configured');
-      }
-
-      // Log current Twilio configuration
-      await logTwilioDetails();
-
-      // Format the destination number for WhatsApp
-      const toNumber = formatWhatsAppNumber(contactNumber);
+      // Basic WhatsApp number formatting
+      const fromNumber = process.env.TWILIO_PHONE_NUMBER.replace(/\s+/g, '');
+      const toNumber = contactNumber.replace(/^\+/, '');
 
       console.log('\n=== Sending WhatsApp Message ===');
+      console.log('From:', fromNumber);
       console.log('To:', toNumber);
       console.log('Content:', content);
-      console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
 
-      // Send message via Twilio Messaging Service
-      const messagingOptions = {
-        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
-        to: toNumber,
-        body: content,
-        // Ensure messages are sent through WhatsApp
-        contentType: 'text/plain',
-        contentSid: null,
-        contentVariables: null,
-        mediaUrl: null,
-        statusCallback: `${process.env.BASE_URL}/webhook`
-      };
-
-      console.log('Message options:', JSON.stringify(messagingOptions, null, 2));
-
-      const twilioMessage = await twilioClient.messages.create(messagingOptions);
+      // Send message with template for first contact
+      const twilioMessage = await twilioClient.messages.create({
+        from: `whatsapp:${fromNumber}`,
+        to: `whatsapp:+${toNumber}`,
+        body: `Your RottieConnect code is: ${content}.\n\nThis is a test message.`,
+      });
 
       console.log('Message sent successfully:', twilioMessage.sid);
       console.log('Message status:', twilioMessage.status);
-      console.log('Message direction:', twilioMessage.direction);
-      console.log('Message from:', twilioMessage.from);
-      console.log('Message to:', twilioMessage.to);
       console.log('==========================\n');
 
       // Store message in database
@@ -607,32 +581,23 @@ export function registerRoutes(app: Express): Server {
           status: twilioMessage.status,
           twilioSid: twilioMessage.sid,
           metadata: {
-            channel: 'whatsapp',
-            profile: {
-              name: twilioMessage.to
-            }
+            channel: 'whatsapp'
           },
         })
         .returning();
 
-      // Broadcast the new message to all connected clients
+      // Broadcast the new message
       broadcast({
         type: "message_created",
         message: message[0]
       });
 
-      // Return standardized API response
       res.json({
         success: true,
         data: {
           message: message[0],
           twilioSid: twilioMessage.sid,
-          status: twilioMessage.status,
-          details: {
-            from: twilioMessage.from,
-            to: twilioMessage.to,
-            direction: twilioMessage.direction
-          }
+          status: twilioMessage.status
         }
       });
     } catch (error: any) {
@@ -646,7 +611,6 @@ export function registerRoutes(app: Express): Server {
       });
       console.error("==========================\n");
 
-      // Return standardized error response
       res.status(error.status || 500).json({
         success: false,
         error: {
@@ -997,7 +961,7 @@ export function registerRoutes(app: Express): Server {
       console.log('Test number:', testNumber);
 
       if (!twilioClient || !process.env.TWILIO_MESSAGING_SERVICE_SID) {
-        console.error('Twilio client or messaging service not configured');
+        consoleerror('Twilio client or messaging servicenot configured');
         throw new Error('Messaging service not configured');
       }
 
@@ -1134,7 +1098,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Test sending a WhatsApp message
+  // Test verification code sending
   app.post("/api/verify/test-message", async (_req, res) => {
     try {
       if (!twilioClient || !process.env.TWILIO_MESSAGING_SERVICE_SID) {
