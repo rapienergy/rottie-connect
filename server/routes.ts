@@ -63,30 +63,6 @@ function formatWhatsAppNumber(phone: string): string {
   return `whatsapp:+52${cleaned}`;
 }
 
-// Update formatVoiceNumber function for better number formatting
-function formatVoiceNumber(phone: string): string {
-  // Remove all non-digit characters except plus sign
-  const cleaned = phone.replace(/[^\d+]/g, '');
-
-  // Handle Mexican numbers
-  if (cleaned.startsWith('52') && cleaned.length === 12) {
-    return '+' + cleaned;
-  }
-
-  // Add Mexico country code for 10-digit numbers
-  if (cleaned.length === 10) {
-    return '+52' + cleaned;
-  }
-
-  // If already has plus and proper length, return as is
-  if (cleaned.startsWith('+') && cleaned.length >= 12) {
-    return cleaned;
-  }
-
-  // Default: add +52 if no country code
-  return cleaned.startsWith('+') ? cleaned : '+52' + cleaned;
-}
-
 // Add message validation functions
 function validateMessageContent(content: string): { isValid: boolean; error?: string } {
   if (!content || typeof content !== 'string') {
@@ -123,34 +99,6 @@ function validatePhoneNumber(phone: string): { isValid: boolean; error?: string 
   }
 
   return { isValid: true };
-}
-
-// Add more detailed logging for message sending
-async function logTwilioDetails() {
-  if (!twilioClient) return;
-
-  try {
-    const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
-    if (!messagingServiceSid) {
-      console.error('Missing TWILIO_MESSAGING_SERVICE_SID');
-      return;
-    }
-
-    const service = await twilioClient.messaging.v1.services(messagingServiceSid).fetch();
-    const phoneNumbers = await twilioClient.messaging.v1
-      .services(messagingServiceSid)
-      .phoneNumbers
-      .list();
-
-    console.log('\n=== Twilio Configuration ===');
-    console.log('Account SID:', process.env.TWILIO_ACCOUNT_SID?.substring(0, 8) + '...');
-    console.log('Service SID:', messagingServiceSid.substring(0, 8) + '...');
-    console.log('Service Name:', service.friendlyName);
-    console.log('Phone Numbers:', phoneNumbers.map(p => p.phoneNumber).join(', '));
-    console.log('===========================\n');
-  } catch (error) {
-    console.error('Error logging Twilio details:', error);
-  }
 }
 
 export function registerRoutes(app: Express): Server {
@@ -530,7 +478,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Send message with proper webhook configuration
+  // Update the /api/messages endpoint
   app.post("/api/messages", async (req, res) => {
     try {
       if (!twilioClient) {
@@ -539,129 +487,95 @@ export function registerRoutes(app: Express): Server {
 
       const { contactNumber, content } = req.body;
 
-      if (!contactNumber || !content) {
+      // Validate input
+      const contentValidation = validateMessageContent(content);
+      if (!contentValidation.isValid) {
         return res.status(400).json({
-          error: true,
-          code: 'INVALID_REQUEST',
-          message: 'Contact number and content are required'
+          success: false,
+          error: {
+            code: 'INVALID_CONTENT',
+            message: contentValidation.error
+          }
         });
       }
 
-      if (!process.env.TWILIO_PHONE_NUMBER || !process.env.TWILIO_MESSAGING_SERVICE_SID) {
-        throw new Error('Missing required Twilio configuration');
+      const phoneValidation = validatePhoneNumber(contactNumber);
+      if (!phoneValidation.isValid) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_PHONE',
+            message: phoneValidation.error
+          }
+        });
       }
 
-      // Properly format the WhatsApp number
-      const cleanNumber = contactNumber.replace(/\s+/g, '').replace(/[^\d+]/g, '');
-      const formattedNumber = cleanNumber.startsWith('+') ? cleanNumber : `+${cleanNumber}`;
-      const whatsappNumber = `whatsapp:${formattedNumber}`;
+      // Format WhatsApp number
+      const whatsappNumber = formatWhatsAppNumber(contactNumber);
 
       console.log('\n=== Sending WhatsApp Message ===');
       console.log('To:', whatsappNumber);
-      console.log('From WhatsApp number:', process.env.TWILIO_PHONE_NUMBER);
+      console.log('From:', `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`);
       console.log('Content:', content);
 
-      // First, check if this is the first message to this number
-      const previousMessages = await twilioClient.messages.list({
+      // Send message using Twilio
+      const message = await twilioClient.messages.create({
+        from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
         to: whatsappNumber,
-        limit: 1
+        body: content
       });
-
-      let twilioMessage;
-      if (previousMessages.length === 0) {
-        // For first contact, use a template message
-        console.log('First contact - using template message');
-        twilioMessage = await twilioClient.messages.create({
-          from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
-          to: whatsappNumber,
-          body: 'Your RottieConnect code is: {{1}}. This code will expire in {{2}} minutes.',
-          contentSid: null, // Remove if not using content templates
-          contentVariables: JSON.stringify({
-            1: content,
-            2: '5'
-          })
-        });
-      } else {
-        // For subsequent messages, use normal message sending
-        console.log('Subsequent contact - using direct message');
-        twilioMessage = await twilioClient.messages.create({
-          from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
-          to: whatsappNumber,
-          body: content
-        });
-      }
 
       console.log('Message sent successfully');
-      console.log('Message SID:', twilioMessage.sid);
-      console.log('Status:', twilioMessage.status);
-      console.log('Error Code:', twilioMessage.errorCode);
-      console.log('Error Message:', twilioMessage.errorMessage);
+      console.log('Message SID:', message.sid);
+      console.log('Status:', message.status);
       console.log('=== WhatsApp Message Send Complete ===\n');
 
-      // Store message in database
-      const message = await db
+      // Store in database and return response
+      const dbMessage = await db
         .insert(messages)
         .values({
-          contactNumber: formattedNumber,
+          contactNumber: whatsappNumber.replace('whatsapp:', ''),
           content,
-          direction: "rottie",
-          status: twilioMessage.status,
-          twilioSid: twilioMessage.sid,
+          direction: 'outbound',
+          status: message.status,
+          twilioSid: message.sid,
           metadata: {
             channel: 'whatsapp',
-            messageType: previousMessages.length === 0 ? 'template' : 'direct',
-            errorCode: twilioMessage.errorCode,
-            errorMessage: twilioMessage.errorMessage
-          },
+            from: message.from,
+            to: message.to
+          }
         })
         .returning();
-
-      // Broadcast the new message
-      broadcast({
-        type: "message_created",
-        message: message[0]
-      });
 
       res.json({
         success: true,
         data: {
-          message: message[0],
-          twilioSid: twilioMessage.sid,
-          status: twilioMessage.status,
-          details: {
-            messageType: previousMessages.length === 0 ? 'template' : 'direct',
-            errorCode: twilioMessage.errorCode,
-            errorMessage: twilioMessage.errorMessage
-          }
+          message: dbMessage[0],
+          twilioSid: message.sid,
+          status: message.status
         }
       });
     } catch (error: any) {
-      console.error("\n=== WhatsApp Message Error ===");
-      console.error("Error details:", {
+      console.error('\n=== WhatsApp Message Error ===');
+      console.error('Error details:', {
         message: error.message,
         code: error.code,
         status: error.status,
-        moreInfo: error.moreInfo,
-        details: error.details,
-        stack: error.stack
+        details: error.details
       });
-      console.error("==========================\n");
+      console.error('========================\n');
 
       res.status(error.status || 500).json({
         success: false,
         error: {
-          code: error.code || 'MESSAGE_SEND_FAILED',
-          message: error.message || 'Failed to send message',
-          details: {
-            moreInfo: error.moreInfo,
-            status: error.status,
-            errorCode: error.errorCode,
-            errorMessage: error.errorMessage
-          }
+          code: error.code || 'WHATSAPP_SEND_FAILED',
+          message: error.message || 'Failed to send WhatsApp message',
+          details: error.details || {}
         }
       });
     }
   });
+
 
 
   // Get all conversations across channels
