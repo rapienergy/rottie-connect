@@ -967,7 +967,7 @@ export function registerRoutes(app: Express): Server {
       const message = await twilioClient.messages.create({
         messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
         to: toNumber,
-        body: `Your RottieConnect test verification code is: ${testCode}\n\nThis is a test message.`
+        body: ``Your RottieConnect test verification code is: ${testCode}\n\nThis is a test message.`
       });
 
       console.log('Message sent successfully:', message.sid);
@@ -1549,6 +1549,89 @@ export function registerRoutes(app: Express): Server {
             moreInfo: error.moreInfo,
             status: error.status
           }
+        }
+      });
+    }
+  });
+
+  // Add test message endpoint
+  app.post("/api/test-whatsapp", async (_req, res) => {
+    try {
+      if (!twilioClient) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      const testNumber = "+5215584277211";
+      const testMessage = "Hello! This is a test message from RottieConnect 🤖";
+
+      console.log('\n=== Sending Test WhatsApp Message ===');
+      console.log('To:', testNumber);
+      console.log('Message:', testMessage);
+
+      // Format number for WhatsApp
+      const whatsappNumber = formatWhatsAppNumber(testNumber);
+      console.log('Formatted number:', whatsappNumber);
+
+      // Send message using Twilio
+      const message = await twilioClient.messages.create({
+        from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
+        to: whatsappNumber,
+        body: testMessage,
+        statusCallback: `${process.env.BASE_URL}/webhook`
+      });
+
+      console.log('Message sent successfully');
+      console.log('Message SID:', message.sid);
+      console.log('Status:', message.status);
+      console.log('=== Test Message Complete ===\n');
+
+      // Store in database
+      const dbMessage = await db
+        .insert(messages)
+        .values({
+          contactNumber: testNumber,
+          content: testMessage,
+          direction: 'outbound',
+          status: message.status,
+          twilioSid: message.sid,
+          metadata: {
+            channel: 'whatsapp',
+            isTest: true,
+            from: message.from,
+            to: message.to
+          }
+        })
+        .returning();
+
+      res.json({
+        success: true,
+        data: {
+          message: dbMessage[0],
+          twilioSid: message.sid,
+          status: message.status,
+          details: {
+            messageType: 'test',
+            from: message.from,
+            to: message.to
+          }
+        }
+      });
+    } catch (error: any) {
+      console.error('\n=== WhatsApp Test Error ===');
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        status: error.status,
+        details: error.details
+      });
+      console.error('========================\n');
+
+      res.status(error.status || 500).json({
+        success: false,
+        error: {
+          code: error.code || 'TEST_MESSAGE_FAILED',
+          message: error.message || 'Failed to send test message',
+          details: error.details || {}
         }
       });
     }
