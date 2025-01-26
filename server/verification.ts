@@ -39,6 +39,10 @@ export class VerificationService {
       const formattedNumber = cleanNumber.startsWith('+') ? cleanNumber : `+${cleanNumber}`;
       console.log('Formatted phone number:', formattedNumber);
 
+      // Generate new code first
+      const code = this.generateCode();
+      console.log('Generated verification code:', code);
+
       // Check for existing active verification
       const now = new Date();
       const existingVerification = await db.query.verificationCodes.findFirst({
@@ -60,10 +64,6 @@ export class VerificationService {
         }
       }
 
-      // Generate new code
-      const code = this.generateCode();
-      console.log('Generated verification code:', code);
-
       const expiresAt = new Date();
       expiresAt.setMinutes(expiresAt.getMinutes() + this.CODE_EXPIRY_MINUTES);
 
@@ -81,7 +81,7 @@ export class VerificationService {
       // Send verification code via WhatsApp
       if (twilioClient && process.env.TWILIO_MESSAGING_SERVICE_SID) {
         // Format number for WhatsApp
-        const toNumber = `whatsapp:${formattedNumber.substring(1)}`;
+        const toNumber = `whatsapp:${formattedNumber}`;  // Changed: Keep the + in the number
         console.log('Sending WhatsApp message to:', toNumber);
         console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
 
@@ -89,8 +89,8 @@ export class VerificationService {
           const message = await twilioClient.messages.create({
             messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
             to: toNumber,
-            body: `Your RottieConnect verification code is: ${code}\n\nThis code will expire in ${this.CODE_EXPIRY_MINUTES} minutes.`,
-            contentType: 'text/plain'
+            body: `Your RottieConnect verification code is: ${code}\n\nThis code will expire in ${this.CODE_EXPIRY_MINUTES} minutes.`
+            // Removed contentType parameter as it's not needed
           });
 
           console.log('Message sent successfully:', message.sid);
@@ -163,7 +163,7 @@ export class VerificationService {
       const newAttempts = (verification.attempts || 0) + 1;
       await db
         .update(verificationCodes)
-        .set({ 
+        .set({
           attempts: newAttempts,
           lastAttemptAt: now
         })
