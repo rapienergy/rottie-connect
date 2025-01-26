@@ -5,17 +5,10 @@ import { and, eq, gt } from "drizzle-orm";
 import twilio from "twilio";
 import { CONFIG } from "./config";
 
-// Initialize Twilio client with detailed logging
+// Initialize Twilio client
 const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
   ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
   : null;
-
-if (!twilioClient) {
-  console.error('Twilio client initialization failed:');
-  console.error('- TWILIO_ACCOUNT_SID exists:', !!process.env.TWILIO_ACCOUNT_SID);
-  console.error('- TWILIO_AUTH_TOKEN exists:', !!process.env.TWILIO_AUTH_TOKEN);
-  console.error('- TWILIO_PHONE_NUMBER exists:', !!process.env.TWILIO_PHONE_NUMBER);
-}
 
 export class VerificationService {
   private static CODE_LENGTH = CONFIG.VERIFICATION.CODE_LENGTH;
@@ -23,128 +16,16 @@ export class VerificationService {
   private static MAX_ATTEMPTS = CONFIG.VERIFICATION.MAX_ATTEMPTS;
   private static COOLDOWN_MINUTES = CONFIG.VERIFICATION.COOLDOWN_MINUTES;
 
-  // Check WhatsApp configuration and capabilities
-  static async checkWhatsAppConfiguration(): Promise<{ 
-    isConfigured: boolean; 
-    error?: string;
-    details?: any;
-  }> {
-    try {
-      if (!twilioClient) {
-        return { 
-          isConfigured: false, 
-          error: 'Twilio client not initialized'
-        };
-      }
-
-      if (!process.env.TWILIO_PHONE_NUMBER) {
-        return { 
-          isConfigured: false, 
-          error: 'TWILIO_PHONE_NUMBER not configured'
-        };
-      }
-
-      // Get account details to check WhatsApp capability
-      const account = await twilioClient.api.accounts(process.env.TWILIO_ACCOUNT_SID).fetch();
-      const phoneNumber = await twilioClient.incomingPhoneNumbers
-        .list({ phoneNumber: process.env.TWILIO_PHONE_NUMBER })
-        .then(numbers => numbers[0]);
-
-      if (!phoneNumber) {
-        return {
-          isConfigured: false,
-          error: 'Phone number not found in Twilio account',
-          details: { phoneNumber: process.env.TWILIO_PHONE_NUMBER }
-        };
-      }
-
-      return {
-        isConfigured: true,
-        details: {
-          accountStatus: account.status,
-          phoneNumber: phoneNumber.phoneNumber,
-          capabilities: phoneNumber.capabilities
-        }
-      };
-    } catch (error: any) {
-      return {
-        isConfigured: false,
-        error: error.message,
-        details: {
-          code: error.code,
-          moreInfo: error.moreInfo,
-          status: error.status
-        }
-      };
-    }
-  }
-
-  // Test function to send a basic WhatsApp message
-  static async sendTestMessage(toNumber: string): Promise<boolean> {
-    try {
-      console.log('\n=== Starting Test Message Send ===');
-
-      // Check WhatsApp configuration first
-      const whatsappConfig = await this.checkWhatsAppConfiguration();
-      if (!whatsappConfig.isConfigured) {
-        throw new Error(`WhatsApp not properly configured: ${whatsappConfig.error}`);
-      }
-
-      console.log('WhatsApp configuration:', whatsappConfig.details);
-
-      if (!twilioClient || !process.env.TWILIO_PHONE_NUMBER) {
-        throw new Error('Twilio client or phone number not configured');
-      }
-
-      // Format the WhatsApp numbers correctly
-      const fromNumber = `whatsapp:${process.env.TWILIO_PHONE_NUMBER.replace(/\s+/g, '')}`;
-      const cleanNumber = toNumber.replace(/\s+/g, '').replace(/[^\d+]/g, '');
-      const formattedNumber = cleanNumber.startsWith('+') ? cleanNumber : `+${cleanNumber}`;
-      const whatsappNumber = `whatsapp:${formattedNumber}`;
-
-      console.log('Sending from:', fromNumber);
-      console.log('Sending to:', whatsappNumber);
-
-      // Use an approved template message for initial contact
-      const message = await twilioClient.messages.create({
-        from: fromNumber,
-        to: whatsappNumber,
-        body: 'Your RottieConnect verification code is {{1}}. This code will expire in {{2}} minutes.',
-        contentSid: null,
-        contentVariables: JSON.stringify({
-          1: '123456',
-          2: '5'
-        })
-      });
-
-      console.log('Message sent successfully!');
-      console.log('Message SID:', message.sid);
-      console.log('Status:', message.status);
-      console.log('Error Code:', message.errorCode);
-      console.log('Error Message:', message.errorMessage);
-      console.log('=== Test Message Complete ===\n');
-
-      return true;
-    } catch (error: any) {
-      console.error('Error sending test message:');
-      console.error('Code:', error.code);
-      console.error('Message:', error.message);
-      console.error('More Info:', error.moreInfo);
-      console.error('Status:', error.status);
-      throw error;
-    }
-  }
-
   static generateCode(): string {
     return randomInt(100000, 999999).toString().padStart(6, '0');
   }
 
   static async createVerification(phoneNumber: string): Promise<string> {
     try {
-      console.log('\n=== Starting Internal Verification Process ===');
-      console.log('Phone number:', phoneNumber);
+      console.log('\n=== Starting Verification Process ===');
+      console.log('Original phone number:', phoneNumber);
 
-      // Clean phone number format
+      // Clean phone number format - ensure it has + prefix and proper format
       const cleanNumber = phoneNumber.replace(/\s+/g, '').replace(/[^\d+]/g, '');
       const formattedNumber = cleanNumber.startsWith('+') ? cleanNumber : `+${cleanNumber}`;
       console.log('Formatted phone number:', formattedNumber);
@@ -160,7 +41,7 @@ export class VerificationService {
 
       // If there's an existing verification, check cooldown
       if (existingVerification) {
-        const cooldownEndTime = new Date(existingVerification.createdAt.getTime());
+        const cooldownEndTime = new Date(existingVerification.createdAt);
         cooldownEndTime.setMinutes(cooldownEndTime.getMinutes() + this.COOLDOWN_MINUTES);
 
         if (now < cooldownEndTime) {
@@ -177,7 +58,7 @@ export class VerificationService {
       const expiresAt = new Date();
       expiresAt.setMinutes(expiresAt.getMinutes() + this.CODE_EXPIRY_MINUTES);
 
-      // Store verification code
+      // Store new verification code
       await db.insert(verificationCodes).values({
         phoneNumber: formattedNumber,
         code,
@@ -186,10 +67,37 @@ export class VerificationService {
         attempts: 0
       });
 
-      console.log('Verification code stored successfully');
-      console.log('*** FOR TESTING: Verification Code:', code, '***');
-      console.log('=== Internal Verification Process Complete ===\n');
+      console.log('Verification code stored in database');
 
+      // Send verification code via WhatsApp
+      if (twilioClient && process.env.TWILIO_MESSAGING_SERVICE_SID) {
+        // Remove the + prefix for WhatsApp number format
+        const toNumber = `whatsapp:${formattedNumber.substring(1)}`;
+        console.log('Sending WhatsApp message to:', toNumber);
+        console.log('Using Messaging Service:', process.env.TWILIO_MESSAGING_SERVICE_SID);
+
+        try {
+          const message = await twilioClient.messages.create({
+            messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+            to: toNumber,
+            body: `Your RottieConnect verification code is: ${code}\n\nThis code will expire in ${this.CODE_EXPIRY_MINUTES} minutes.`
+          });
+
+          console.log('Message sent successfully:', message.sid);
+          console.log('Message status:', message.status);
+        } catch (error) {
+          console.error('Error sending WhatsApp message:', error);
+          throw new Error('Failed to send verification code via WhatsApp');
+        }
+      } else {
+        console.error('Twilio configuration missing:');
+        console.error('- TWILIO_ACCOUNT_SID exists:', !!process.env.TWILIO_ACCOUNT_SID);
+        console.error('- TWILIO_AUTH_TOKEN exists:', !!process.env.TWILIO_AUTH_TOKEN);
+        console.error('- TWILIO_MESSAGING_SERVICE_SID exists:', !!process.env.TWILIO_MESSAGING_SERVICE_SID);
+        throw new Error('Messaging service not configured');
+      }
+
+      console.log('=== Verification Process Completed ===\n');
       return code;
     } catch (error) {
       console.error('Error in createVerification:', error);
@@ -198,10 +106,12 @@ export class VerificationService {
   }
 
   static async verifyCode(phoneNumber: string, code: string): Promise<boolean> {
+    // Clean and format the phone number consistently
     const cleanNumber = phoneNumber.replace(/\s+/g, '').replace(/[^\d+]/g, '');
     const formattedNumber = cleanNumber.startsWith('+') ? cleanNumber : `+${cleanNumber}`;
     const now = new Date();
 
+    // Find active verification codes for this number
     const verification = await db.query.verificationCodes.findFirst({
       where: and(
         eq(verificationCodes.phoneNumber, formattedNumber),
@@ -213,15 +123,18 @@ export class VerificationService {
       throw new Error('No active verification code found. Please request a new code.');
     }
 
+    // Check if max attempts exceeded
     if (verification.attempts >= this.MAX_ATTEMPTS) {
       throw new Error(`Max attempts (${this.MAX_ATTEMPTS}) exceeded. Please request a new code.`);
     }
 
+    // Verify the code
     if (verification.code !== code) {
+      // Update attempts count
       const newAttempts = (verification.attempts || 0) + 1;
       await db
         .update(verificationCodes)
-        .set({
+        .set({ 
           attempts: newAttempts,
           lastAttemptAt: now
         })
@@ -231,6 +144,7 @@ export class VerificationService {
       throw new Error(`Invalid code. ${remainingAttempts} attempts remaining.`);
     }
 
+    // Mark as verified
     await db
       .update(verificationCodes)
       .set({ verified: true })
