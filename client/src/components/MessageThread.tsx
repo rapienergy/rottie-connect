@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMessages, useSendMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Send, Phone, PhoneOff, PhoneCall } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
+import { toast } from "@/hooks/use-toast";
 
 interface MessageThreadProps {
   contactNumber: string;
@@ -44,6 +45,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
   const sendMessage = useSendMessage();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [content, setContent] = useState("");
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -53,23 +55,49 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     scrollToBottom();
   }, [messages]);
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSendMessage = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const form = e.currentTarget;
-    const content = new FormData(form).get("content") as string;
 
-    if (!content.trim()) return;
+    if (!content.trim()) {
+      toast({
+        title: "Cannot send empty message",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
-      await sendMessage.mutateAsync({ 
+      await sendMessage.mutateAsync({
         contactNumber,
-        content,
+        content: content.trim(),
         channel: 'whatsapp'
       });
-      form.reset();
+
+      // Clear input after successful send
+      setContent("");
       inputRef.current?.focus();
-    } catch (error) {
+
+      toast({
+        title: "Message sent",
+        description: "Your message has been sent successfully.",
+      });
+    } catch (error: any) {
       console.error('Failed to send message:', error);
+      toast({
+        title: "Failed to send message",
+        description: error.message || "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const form = e.currentTarget.form;
+      if (form) {
+        form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+      }
     }
   };
 
@@ -215,19 +243,22 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
         )}
       </div>
 
-      <form onSubmit={handleSubmit} className="p-4 border-t border-zinc-800 flex gap-2">
+      <form onSubmit={handleSendMessage} className="p-4 border-t border-zinc-800 flex gap-2">
         <Input
           ref={inputRef}
-          name="content"
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          onKeyPress={handleKeyPress}
           placeholder="Type your message..."
           autoComplete="off"
           className="bg-zinc-900 border-zinc-700 text-white font-mono"
+          disabled={sendMessage.isPending}
         />
         <Button 
-          type="submit" 
-          size="icon" 
+          type="submit"
+          size="icon"
           className="bg-green-900 hover:bg-green-800"
-          disabled={sendMessage.isPending}
+          disabled={sendMessage.isPending || !content.trim()}
         >
           <Send className="h-4 w-4" />
         </Button>
