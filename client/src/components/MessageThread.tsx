@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 interface MessageThreadProps {
   contactNumber: string;
@@ -56,6 +57,10 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
     }
   };
 
+  const isRottieMessage = (direction: string) => {
+    return direction === 'rottie' || direction === 'outbound-api' || direction.startsWith('outbound');
+  };
+
   return (
     <div className="h-full flex flex-col bg-black rounded-lg border border-zinc-800">
       <div className="p-4 border-b border-zinc-800">
@@ -67,7 +72,7 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-6 font-mono">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 font-mono">
         {isLoading ? (
           <div className="text-center text-zinc-400">Loading messages...</div>
         ) : !data?.messages || data.messages.length === 0 ? (
@@ -76,14 +81,32 @@ export function MessageThread({ contactNumber }: MessageThreadProps) {
             <p className="text-sm mt-2">Type your message below to start the conversation</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {data.messages.map((msg: Message) => (
               <div
                 key={msg.id}
-                className="text-sm whitespace-pre-wrap"
-                style={{ color: msg.direction === 'rottie' ? '#60A5FA' : '#34D399' }}
+                className={cn(
+                  "flex",
+                  isRottieMessage(msg.direction) ? "justify-end" : "justify-start"
+                )}
               >
-                {`${new Date(msg.createdAt).toLocaleTimeString()} [${msg.direction}] ${msg.content} :: ${msg.status}`}
+                <div 
+                  className={cn(
+                    "max-w-[80%] rounded-lg px-4 py-2 text-sm break-words",
+                    isRottieMessage(msg.direction) 
+                      ? "bg-blue-600 text-white" 
+                      : "bg-green-600 text-white"
+                  )}
+                >
+                  <div className="flex flex-col gap-1">
+                    <div className="font-mono">
+                      {msg.content}
+                    </div>
+                    <div className="text-[10px] opacity-70">
+                      {new Date(msg.createdAt).toLocaleTimeString()} • {msg.status}
+                    </div>
+                  </div>
+                </div>
               </div>
             ))}
             <div ref={messagesEndRef} />
