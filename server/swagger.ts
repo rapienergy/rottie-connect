@@ -485,6 +485,77 @@ export const swaggerDocument: OpenAPIV3.Document = {
           }
         }
       }
+    },
+    '/api/conversations': {
+      get: {
+        summary: 'Get all conversations',
+        description: 'Retrieve all conversations across channels, fetching up to 5000 historical messages',
+        security: [
+          {
+            RottieApiKey: []
+          }
+        ],
+        responses: {
+          '200': {
+            description: 'List of conversations retrieved successfully',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      contactNumber: {
+                        type: 'string',
+                        description: 'The contact number in E.164 format',
+                        example: '+5215512345678'
+                      },
+                      lastMessage: {
+                        type: 'object',
+                        properties: {
+                          content: {
+                            type: 'string',
+                            description: 'Content of the last message'
+                          },
+                          timestamp: {
+                            type: 'string',
+                            format: 'date-time',
+                            description: 'Timestamp of the last message'
+                          }
+                        }
+                      },
+                      unreadCount: {
+                        type: 'integer',
+                        description: 'Number of unread messages in the conversation'
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          '401': {
+            description: 'Unauthorized - Invalid API key',
+            content: {
+              'application/json': {
+                schema: {
+                  $ref: '#/components/schemas/Error'
+                }
+              }
+            }
+          },
+          '500': {
+            description: 'Server error',
+            content: {
+              'application/json': {
+                schema: {
+                  $ref: '#/components/schemas/Error'
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 };
