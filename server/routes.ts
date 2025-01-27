@@ -9,6 +9,7 @@ import type { Twilio } from "twilio";
 import { randomBytes } from 'crypto';
 import { VerificationService } from "./verification";
 import { setupAuth } from "./auth";  // Add this import
+import { api } from './lib/api-client';
 
 // Initialize Twilio client with error handling
 let twilioClient: Twilio | null = null;
@@ -1439,6 +1440,30 @@ export function registerRoutes(app: Express): Server {
           message: error.message,
           code: error.code || 'TEST_MESSAGE_FAILED',
           moreInfo: error.moreInfo
+        }
+      });
+    }
+  });
+
+  app.get("/api/rottie/status", async (_req, res) => {
+    try {
+      const status = await api.getStatus();
+      res.json({
+        status: "connected",
+        api: status,
+        config: {
+          baseUrl: process.env.ROTTIE_CONNECT_URL,
+          hasApiKey: !!process.env.ROTTIE_API_KEY
+        }
+      });
+    } catch (error: any) {
+      console.error("RottieConnect API connection error:", error);
+      res.status(500).json({
+        status: 'error',
+        message: error.message,
+        config: {
+          baseUrl: process.env.ROTTIE_CONNECT_URL,
+          hasApiKey: !!process.env.ROTTIE_API_KEY
         }
       });
     }
